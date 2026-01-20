@@ -85,3 +85,11 @@ export async function fetchCameraControls(cameraId: string): Promise<CameraContr
   const data = await response.json();
   return data.controls || [];
 }
+
+export async function fetchCameraSettings(cameraId: string): Promise<any> {
+  const response = await fetch(`${API_BASE}/cameras/${cameraId}/settings`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch camera settings: ${response.statusText}`);
+  }
+  return await response.json();
+}

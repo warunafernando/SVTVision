@@ -1,4 +1,4 @@
-"""Message bus for PlanA."""
+"""Message bus for SVTVision."""
 
 from typing import Callable, Dict, List, Any
 from collections import defaultdict

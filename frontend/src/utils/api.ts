@@ -9,7 +9,7 @@ export async function fetchSystemInfo(): Promise<SystemInfo> {
   }
   const data = await response.json();
   return {
-    appName: data.appName || 'PlanA',
+    appName: data.appName || 'SVTVision',
     buildId: data.buildId || 'unknown',
     health: data.health || 'OK',
     connection: data.connection || 'connected',

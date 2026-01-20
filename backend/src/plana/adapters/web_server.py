@@ -1,4 +1,4 @@
-"""Web server adapter for PlanA."""
+"""Web server adapter for SVTVision."""
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -45,7 +45,7 @@ class WebServerAdapter:
         self.camera_service = camera_service
         self.frontend_dist_path = frontend_dist_path
         
-        self.app = FastAPI(title="PlanA API")
+        self.app = FastAPI(title="SVTVision API")
         self._setup_routes()
     
     def _setup_routes(self):
@@ -56,7 +56,7 @@ class WebServerAdapter:
             """Get system information."""
             health = self.health_service.get_global_health()
             return {
-                "appName": self.config_service.get("app_name", "PlanA"),
+                "appName": self.config_service.get("app_name", "SVTVision"),
                 "buildId": self.config_service.get("build_id", "2024.01.20-dev"),
                 "health": health.value,
                 "connection": "connected"

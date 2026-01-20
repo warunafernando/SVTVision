@@ -1,4 +1,4 @@
-"""Minimal logging service for PlanA."""
+"""Minimal logging service for SVTVision."""
 
 import logging
 from typing import Optional

@@ -1,6 +1,6 @@
-# PlanA — Cursor Execution Plan (No Code)
+# SVTVision — Cursor Execution Plan (No Code)
 
-This file is the authoritative execution plan for building the PlanA application using Cursor.
+This file is the authoritative execution plan for building the SVTVision application using Cursor.
 
 Cursor must implement stages sequentially and must not advance unless the stated exit criteria are met.
 
@@ -27,7 +27,7 @@ The following images were extracted from the original PDF document:
 
 ## PhotonVision-Style Web UI Requirements
 
-The PlanA frontend must look and feel like PhotonVision. This is a product requirement because it enables rapid, on-robot debugging without attaching a debugger.
+The SVTVision frontend must look and feel like PhotonVision. This is a product requirement because it enables rapid, on-robot debugging without attaching a debugger.
 
 ### Always-visible layout
 
@@ -319,7 +319,7 @@ Localization fusion, PathPlanner integration, executor accept/reject, safe stop 
 
 ## Definition of Done
 
-PlanA is complete when:
+SVTVision is complete when:
 
 - All stages pass self-tests
 - Every failure is explainable live

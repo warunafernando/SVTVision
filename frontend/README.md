@@ -1,6 +1,6 @@
-# PlanA Frontend
+# SVTVision Frontend
 
-PhotonVision-style web UI for PlanA vision system.
+PhotonVision-style web UI for SVTVision vision system.
 
 ## Features
 

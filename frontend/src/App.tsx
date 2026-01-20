@@ -52,7 +52,7 @@ const App: React.FC = () => {
 
   // Use fallback data if backend not available
   const displaySystemInfo: SystemInfo = systemInfo || {
-    appName: 'PlanA',
+    appName: 'SVTVision',
     buildId: '2024.01.20-dev',
     health: 'ERROR',
     connection: connectionStatus,

@@ -33,10 +33,6 @@ class CameraManager:
         self.frame_queue: deque = deque(maxlen=10)
         self.frame_queue_lock = threading.Lock()
         
-        # Frame capture thread
-        self.capture_thread: Optional[threading.Thread] = None
-        self.capture_running = False
-        
         # Metrics
         self.frames_captured = 0
         self.frames_dropped = 0
@@ -78,22 +74,14 @@ class CameraManager:
             self.frames_dropped = 0
             self.last_frame_time = 0.0
         
-        # Start capture thread
-        self.capture_running = True
-        self.capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
-        self.capture_thread.start()
+        # Note: Capture is now handled by a single thread in CameraService
+        # No need to start individual capture threads here
         
         self.logger.info(f"Camera opened: {device_path}")
         return True
     
     def close(self) -> None:
-        """Close camera and stop capture thread."""
-        # Stop capture thread
-        self.capture_running = False
-        if self.capture_thread:
-            self.capture_thread.join(timeout=2.0)
-            self.capture_thread = None
-        
+        """Close camera."""
         # Close camera
         if self.camera_port.is_open():
             self.camera_port.close()
@@ -221,51 +209,38 @@ class CameraManager:
         
         return self.camera_port.apply_control_settings(exposure, gain, saturation)
     
-    def _capture_loop(self) -> None:
-        """Frame capture loop running in separate thread."""
-        frame_interval = 1.0 / self.fps if self.fps > 0 else 0.033  # Default 30fps
-        loop_count = 0
+    def capture_frame_to_queue(self) -> bool:
+        """Capture a single frame and add it to the queue.
         
-        self.logger.info(f"Capture loop started for {self.device_path} at {self.fps} fps")
+        This is called by the single capture thread in CameraService.
+        Returns True if frame was captured successfully, False otherwise.
+        """
+        if not self.camera_port.is_open():
+            return False
         
-        while self.capture_running and self.camera_port.is_open():
-            start_time = time.time()
-            loop_count += 1
-            
-            # Capture frame
-            frame_data = self.camera_port.capture_frame()
-            
-            if frame_data:
-                # Frame is already JPEG encoded from OpenCV, just use it directly
-                with self.frame_queue_lock:
-                    # Check if queue is full (will drop oldest automatically)
-                    was_full = len(self.frame_queue) >= self.frame_queue.maxlen
-                    old_frame_count = len(self.frame_queue)
-                    self.frame_queue.append(frame_data)
-                    
-                    # Only count as drop if we're pushing out an old frame when queue was already full
-                    if was_full and len(self.frame_queue) == old_frame_count:
-                        with self.metrics_lock:
-                            self.frames_dropped += 1
+        # Capture frame
+        frame_data = self.camera_port.capture_frame()
+        
+        if frame_data:
+            # Frame is already JPEG encoded from OpenCV, just use it directly
+            with self.frame_queue_lock:
+                # Check if queue is full (will drop oldest automatically)
+                was_full = len(self.frame_queue) >= self.frame_queue.maxlen
+                old_frame_count = len(self.frame_queue)
+                self.frame_queue.append(frame_data)
                 
-                with self.metrics_lock:
-                    self.frames_captured += 1
-                    self.last_frame_time = time.time()
-                    
-                    # Log every 100 frames for debugging
-                    if self.frames_captured % 100 == 0:
-                        self.logger.info(f"Capture: {self.frames_captured} frames, drops: {self.frames_dropped}, queue: {len(self.frame_queue)}")
-            else:
-                # Frame capture failed
-                with self.metrics_lock:
-                    self.frames_dropped += 1
-                    if loop_count % 100 == 0:
-                        self.logger.warning(f"Frame capture failed (loop #{loop_count}, drops: {self.frames_dropped})")
+                # Only count as drop if we're pushing out an old frame when queue was already full
+                if was_full and len(self.frame_queue) == old_frame_count:
+                    with self.metrics_lock:
+                        self.frames_dropped += 1
             
-            # Sleep to maintain target FPS
-            elapsed = time.time() - start_time
-            sleep_time = max(0, frame_interval - elapsed)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-        
-        self.logger.info(f"Capture loop stopped for {self.device_path}")
+            with self.metrics_lock:
+                self.frames_captured += 1
+                self.last_frame_time = time.time()
+            
+            return True
+        else:
+            # Frame capture failed
+            with self.metrics_lock:
+                self.frames_dropped += 1
+            return False

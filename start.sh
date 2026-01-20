@@ -1,12 +1,12 @@
 #!/bin/bash
-# Single command startup script for PlanA
+# Single command startup script for SVTVision
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "Starting PlanA..."
+echo "Starting SVTVision..."
 
 # Check if frontend is built
 if [ ! -d "frontend/dist" ]; then

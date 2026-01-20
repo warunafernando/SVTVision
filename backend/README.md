@@ -1,6 +1,6 @@
-# PlanA Backend
+# SVTVision Backend
 
-Backend services for PlanA vision system.
+Backend services for SVTVision vision system.
 
 ## Structure
 

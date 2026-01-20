@@ -13,11 +13,13 @@ class DebugTreeManager:
         self,
         health_service: HealthService,
         logger: LoggingService,
-        camera_service=None
+        camera_service=None,
+        camera_discovery=None
     ):
         self.health_service = health_service
         self.logger = logger
         self.camera_service = camera_service
+        self.camera_discovery = camera_discovery
         self.root_node = self._create_simulated_tree()
     
     def _create_simulated_tree(self) -> DebugTreeNode:
@@ -122,6 +124,10 @@ class DebugTreeManager:
                         break
                 break
         
+        # Add/update individual camera nodes
+        if camera_manager_node:
+            self._update_camera_nodes(camera_manager_node)
+        
         # Update camera_capture node with real metrics if camera service available
         if camera_capture_node and self.camera_service:
             managers = self.camera_service.get_all_camera_managers()
@@ -174,6 +180,97 @@ class DebugTreeManager:
                 }
         
         return self.root_node
+    
+    def _update_camera_nodes(self, camera_manager_node: DebugTreeNode) -> None:
+        """Add or update individual camera nodes under camera_manager."""
+        # Get list of detected cameras
+        detected_cameras = []
+        if self.camera_discovery:
+            try:
+                camera_list = self.camera_discovery.get_camera_list()
+                # get_camera_list() returns a list directly, not a dict with "cameras" key
+                if isinstance(camera_list, list):
+                    detected_cameras = camera_list
+                elif isinstance(camera_list, dict):
+                    detected_cameras = camera_list.get("cameras", [])
+            except Exception as e:
+                self.logger.warning(f"Failed to get camera list for debug tree: {e}")
+        
+        # Get camera managers for open cameras
+        camera_managers = {}
+        if self.camera_service:
+            camera_managers = self.camera_service.get_all_camera_managers()
+        
+        # Create a set of camera IDs that should be in the tree
+        camera_ids_in_tree = set()
+        for camera in detected_cameras:
+            camera_ids_in_tree.add(camera.get("id", ""))
+        
+        # Remove camera nodes that are no longer detected
+        camera_manager_node.children = [
+            child for child in camera_manager_node.children 
+            if not child.id.startswith("camera_") or child.id in ["camera_discovery", "camera_capture"] or child.id in camera_ids_in_tree
+        ]
+        
+        # Add or update camera nodes
+        for camera in detected_cameras:
+            camera_id = camera.get("id", "")
+            if not camera_id:
+                continue
+            
+            # Find existing camera node
+            camera_node = None
+            for child in camera_manager_node.children:
+                if child.id == camera_id:
+                    camera_node = child
+                    break
+            
+            # Get camera name
+            camera_name = camera.get("name", camera_id)
+            if camera.get("custom_name"):
+                camera_name = camera.get("custom_name")
+            
+            # Get camera status
+            is_open = camera_id in camera_managers and camera_managers[camera_id].is_open()
+            status = NodeStatus.OK if is_open else NodeStatus.WARN
+            reason = "Open and streaming" if is_open else "Not open"
+            
+            # Get camera metrics if open
+            metrics = {}
+            if is_open:
+                manager = camera_managers[camera_id]
+                manager_metrics = manager.get_metrics()
+                metrics = {
+                    "fps": manager_metrics.get("fps", 0.0),
+                    "drops": manager_metrics.get("frames_dropped", 0),
+                    "frames_captured": manager_metrics.get("frames_captured", 0),
+                    "lastUpdateAge": manager_metrics.get("last_frame_age", 0)
+                }
+            else:
+                metrics = {
+                    "fps": 0.0,
+                    "drops": 0,
+                    "frames_captured": 0,
+                    "lastUpdateAge": 5000
+                }
+            
+            # Create or update camera node
+            if camera_node:
+                camera_node.name = camera_name
+                camera_node.status = status
+                camera_node.reason = reason
+                camera_node.metrics = metrics
+            else:
+                # Insert camera nodes before camera_discovery and camera_capture
+                camera_node = DebugTreeNode(
+                    id=camera_id,
+                    name=camera_name,
+                    status=status,
+                    reason=reason,
+                    metrics=metrics
+                )
+                # Insert at the end, after camera_discovery and camera_capture
+                camera_manager_node.children.append(camera_node)
     
     def get_tree_dict(self) -> dict:
         """Get debug tree as dictionary."""

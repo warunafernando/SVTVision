@@ -1,4 +1,4 @@
-"""Health service for PlanA."""
+"""Health service for SVTVision."""
 
 from enum import Enum
 from typing import Dict, Any

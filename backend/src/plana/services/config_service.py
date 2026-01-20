@@ -1,4 +1,4 @@
-"""Configuration service for PlanA."""
+"""Configuration service for SVTVision."""
 
 import json
 from pathlib import Path
@@ -29,7 +29,7 @@ class ConfigService:
         else:
             # Default config
             self.config = {
-                "app_name": "PlanA",
+                "app_name": "SVTVision",
                 "build_id": "2024.01.20-dev",
                 "version": "0.1.0"
             }

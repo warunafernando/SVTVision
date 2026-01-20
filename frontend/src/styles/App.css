@@ -15,7 +15,7 @@
 .app-sidebar {
   display: flex;
   flex-direction: column;
-  width: 260px;
+  width: 312px; /* 120% of 260px */
   flex-shrink: 0;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border);

@@ -1,4 +1,4 @@
-"""Self-test runner for PlanA."""
+"""Self-test runner for SVTVision."""
 
 from typing import Dict, Any, Optional
 from ..services.logging_service import LoggingService

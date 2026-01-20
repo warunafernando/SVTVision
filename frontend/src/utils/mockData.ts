@@ -1,7 +1,7 @@
 import { DebugTreeNode, SystemInfo, Camera } from '../types';
 
 export const mockSystemInfo: SystemInfo = {
-  appName: 'PlanA',
+  appName: 'SVTVision',
   buildId: '2024.01.20-dev',
   health: 'OK',
   connection: 'connected',

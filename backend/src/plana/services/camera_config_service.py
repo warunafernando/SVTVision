@@ -1,4 +1,4 @@
-"""Camera configuration service for PlanA."""
+"""Camera configuration service for SVTVision."""
 
 import json
 from pathlib import Path

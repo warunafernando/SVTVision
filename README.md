@@ -1,6 +1,6 @@
-# PlanA Vision System
+# SVTVision Vision System
 
-PlanA is a vision system for FRC robotics with a PhotonVision-style web UI for rapid on-robot debugging.
+SVTVision is a vision system for FRC robotics with a PhotonVision-style web UI for rapid on-robot debugging.
 
 ## Implementation Plan
 

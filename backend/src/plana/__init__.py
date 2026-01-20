@@ -1,4 +1,4 @@
-"""PlanA backend package."""
+"""SVTVision backend package."""
 
 from .app_orchestrator import AppOrchestrator
 

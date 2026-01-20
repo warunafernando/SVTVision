@@ -1,8 +1,8 @@
 #!/bin/bash
-# Debug script for PlanA - Comprehensive system status
+# Debug script for SVTVision - Comprehensive system status
 
 echo "========================================="
-echo "PlanA Debug Tool"
+echo "SVTVision Debug Tool"
 echo "========================================="
 echo ""
 

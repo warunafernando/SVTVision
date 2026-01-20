@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Main entry point for PlanA backend."""
+"""Main entry point for SVTVision backend."""
 
 import sys
 from pathlib import Path

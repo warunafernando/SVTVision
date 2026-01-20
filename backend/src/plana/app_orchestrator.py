@@ -1,4 +1,4 @@
-"""Application orchestrator for PlanA."""
+"""Application orchestrator for SVTVision."""
 
 from pathlib import Path
 from .services.logging_service import LoggingService
@@ -36,10 +36,12 @@ class AppOrchestrator:
         )
         
         # Initialize domain managers
+        # Note: camera_discovery will be set after initialization due to circular dependency
         self.debug_tree_manager = DebugTreeManager(
             self.health_service,
             self.logger,
-            self.camera_service
+            self.camera_service,
+            camera_discovery=None  # Will be set below
         )
         
         # Initialize camera discovery
@@ -50,6 +52,9 @@ class AppOrchestrator:
             self.logger,
             self.camera_config_service
         )
+        
+        # Set camera_discovery in debug_tree_manager after it's created
+        self.debug_tree_manager.camera_discovery = self.camera_discovery
         
         # Initialize adapters
         self.self_test_runner = SelfTestRunner(
@@ -164,11 +169,11 @@ class AppOrchestrator:
     
     def start(self):
         """Start the application."""
-        self.logger.info("Starting PlanA application...")
+        self.logger.info("Starting SVTVision application...")
         self.logger.info(f"App: {self.config_service.get('app_name')}")
         self.logger.info(f"Build: {self.config_service.get('build_id')}")
         return self.web_server.get_app()
     
     def shutdown(self):
         """Shutdown the application."""
-        self.logger.info("Shutting down PlanA application...")
+        self.logger.info("Shutting down SVTVision application...")

@@ -1,5 +1,7 @@
 """Camera service for managing multiple cameras."""
 
+import threading
+import time
 from typing import Dict, Optional, Any
 from .camera_manager import CameraManager
 from ..adapters.opencv_camera import OpenCVCameraAdapter
@@ -19,6 +21,13 @@ class CameraService:
         self.logger = logger
         self.camera_config_service = camera_config_service
         self.camera_managers: Dict[str, CameraManager] = {}
+        
+        # Single capture thread for all cameras
+        self.capture_thread: Optional[threading.Thread] = None
+        self.capture_running = False
+        self.capture_thread_lock = threading.Lock()
+        
+        self.logger.info("CameraService initialized with single-threaded capture")
     
     def open_camera(
         self,
@@ -78,6 +87,9 @@ class CameraService:
                 f"expected {width}x{height}@{fps}fps, got {verification.get('actual', {})}"
             )
         
+        # Start single capture thread if not already running
+        self._ensure_capture_thread_running()
+        
         self.logger.info(f"Camera {camera_id} opened successfully")
         return True
     
@@ -90,6 +102,11 @@ class CameraService:
         manager = self.camera_managers[camera_id]
         manager.close()
         del self.camera_managers[camera_id]
+        
+        # Stop capture thread if no cameras remain
+        with self.capture_thread_lock:
+            if len(self.camera_managers) == 0:
+                self._stop_capture_thread()
         
         self.logger.info(f"Camera {camera_id} closed")
         return True
@@ -154,3 +171,70 @@ class CameraService:
         
         manager = self.camera_managers[camera_id]
         return manager.apply_control_settings(exposure, gain, saturation)
+    
+    def _ensure_capture_thread_running(self) -> None:
+        """Ensure the single capture thread is running."""
+        with self.capture_thread_lock:
+            if not self.capture_running and len(self.camera_managers) > 0:
+                self.capture_running = True
+                self.capture_thread = threading.Thread(target=self._single_capture_loop, daemon=True)
+                self.capture_thread.start()
+                self.logger.info("Single capture thread started for all cameras")
+    
+    def _stop_capture_thread(self) -> None:
+        """Stop the single capture thread."""
+        if self.capture_running:
+            self.capture_running = False
+            if self.capture_thread:
+                self.capture_thread.join(timeout=2.0)
+                self.capture_thread = None
+            self.logger.info("Single capture thread stopped")
+    
+    def _single_capture_loop(self) -> None:
+        """Single capture loop that iterates over all open cameras.
+        
+        This is the only capture thread - it loops through all cameras
+        and captures frames for each one into their respective queues.
+        """
+        self.logger.info("Single capture loop started - processing all cameras")
+        
+        iteration_count = 0
+        
+        while self.capture_running:
+            iteration_start = time.time()
+            iteration_count += 1
+            
+            # Get list of camera managers (copy to avoid locking issues)
+            with self.capture_thread_lock:
+                cameras_to_process = list(self.camera_managers.items())
+            
+            # If no cameras, sleep briefly and continue
+            if not cameras_to_process:
+                time.sleep(0.1)
+                continue
+            
+            # Process each camera
+            for camera_id, manager in cameras_to_process:
+                if not self.capture_running:
+                    break
+                
+                # Capture frame for this camera
+                try:
+                    manager.capture_frame_to_queue()
+                except Exception as e:
+                    self.logger.error(f"Error capturing frame for camera {camera_id}: {e}")
+            
+            # Adaptive sleep: aim for ~30 iterations per second when cameras are present
+            # This allows multiple captures per second for each camera
+            elapsed = time.time() - iteration_start
+            sleep_time = max(0.0, (1.0 / 30.0) - elapsed)  # Target ~30 iterations/sec
+            
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            
+            # Log status every 1000 iterations (~33 seconds at 30 iter/sec)
+            if iteration_count % 1000 == 0:
+                active_cameras = sum(1 for _, m in cameras_to_process if m.is_open())
+                self.logger.info(f"Capture loop: {iteration_count} iterations, {active_cameras} active cameras")
+        
+        self.logger.info("Single capture loop stopped")
