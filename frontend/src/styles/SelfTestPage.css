@@ -1,0 +1,66 @@
+.selftest-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.selftest-content h2 {
+  font-size: 24px;
+  margin-bottom: 24px;
+  color: var(--text-primary);
+}
+
+.test-controls {
+  margin-bottom: 24px;
+}
+
+.test-results {
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 16px;
+}
+
+.test-results h3 {
+  font-size: 18px;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+
+.no-results {
+  color: var(--text-secondary);
+  font-style: italic;
+  text-align: center;
+  padding: 32px;
+}
+
+.test-results table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.test-results th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.test-results td {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.test-results tbody tr:hover {
+  background-color: var(--bg-hover);
+}
+
+.test-results tbody tr:last-child td {
+  border-bottom: none;
+}

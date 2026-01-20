@@ -1,0 +1,372 @@
+.camera-discovery-page {
+  padding: 24px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.discovery-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.discovery-header h2 {
+  font-size: 24px;
+  color: var(--text-primary);
+}
+
+.error-message {
+  background-color: var(--status-error);
+  color: white;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.no-cameras {
+  text-align: center;
+  padding: 48px;
+  color: var(--text-secondary);
+}
+
+.no-cameras .hint {
+  font-size: 14px;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.camera-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.camera-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.camera-header {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  gap: 12px;
+  transition: background-color 0.2s;
+}
+
+.camera-header:hover {
+  background-color: var(--bg-hover);
+}
+
+.camera-header .expand-icon,
+.camera-header .camera-name {
+  cursor: pointer;
+}
+
+.expand-icon {
+  width: 20px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.camera-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.camera-id {
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background-color: var(--bg-tertiary);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.camera-status {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.camera-status.available {
+  background-color: var(--status-ok);
+  color: white;
+}
+
+.camera-status.unavailable {
+  background-color: var(--status-error);
+  color: white;
+}
+
+.camera-details {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  background-color: var(--bg-tertiary);
+}
+
+.details-section {
+  margin-bottom: 24px;
+}
+
+.details-section:last-child {
+  margin-bottom: 0;
+}
+
+.details-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.details-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.usb-version-highlight {
+  grid-column: 1 / -1;
+  padding: 8px;
+  background-color: var(--bg-secondary);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.usb-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 14px;
+  margin-left: 8px;
+}
+
+.usb-badge.usb3 {
+  background-color: #0066cc;
+  color: white;
+}
+
+.usb-badge.usb2 {
+  background-color: #cc6600;
+  color: white;
+}
+
+.no-usb-info {
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 12px;
+}
+
+.details-grid label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.formats-list,
+.resolutions-list,
+.fps-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.formats-list {
+  font-family: monospace;
+  font-size: 14px;
+}
+
+.resolution,
+.fps-range {
+  background-color: var(--bg-secondary);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.format-group {
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+.format-group strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.resolution-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.resolution-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background-color: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.fps-info {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.fps-ranges-table {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.fps-ranges-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.fps-ranges-table th,
+.fps-ranges-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.fps-ranges-table th {
+  background-color: var(--bg-secondary);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fps-ranges-table td {
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.controls-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.controls-table th,
+.controls-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.controls-table th {
+  background-color: var(--bg-secondary);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.controls-table td {
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.controls-table tbody tr:hover {
+  background-color: var(--bg-hover);
+}
+
+.details-actions {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.button-secondary {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.button-secondary:hover {
+  background-color: var(--bg-hover);
+}
+
+.button-small {
+  padding: 6px 12px;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.camera-naming-form {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  background-color: var(--bg-tertiary);
+}
+
+.camera-naming-form h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.naming-controls {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+
+.naming-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.naming-field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.naming-field .select {
+  min-width: 150px;
+}
+
+.naming-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.name-preview {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.name-preview strong {
+  color: var(--accent);
+  font-size: 14px;
+}

@@ -1,0 +1,71 @@
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.build-id {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.health-indicator {
+  display: flex;
+  align-items: center;
+}
+
+.status-indicator {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background-color: var(--bg-tertiary);
+}
+
+.connection-indicator {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+}
+
+.connection-status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background-color: var(--bg-tertiary);
+}
+
+.connection-status.connected {
+  color: var(--status-ok);
+}
+
+.connection-status.reconnecting {
+  color: var(--status-warn);
+}
+
+.connection-status.disconnected {
+  color: var(--status-error);
+}

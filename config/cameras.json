@@ -1,0 +1,63 @@
+{
+  "camera_names": {
+    "video0": {
+      "name": "middle-left",
+      "position": "middle",
+      "side": "left"
+    },
+    "video2": {
+      "name": "front-left",
+      "position": "front",
+      "side": "left"
+    },
+    "video3": {
+      "name": "front-right",
+      "position": "front",
+      "side": "right"
+    },
+    "usb-Arducam_202500915_0001": {
+      "name": "front-right",
+      "position": "front",
+      "side": "right"
+    },
+    "usb-Arducam_202500915_0001-6-1": {
+      "name": "front-left",
+      "position": "front",
+      "side": "left",
+      "resolution": {
+        "format": "YUYV",
+        "width": 1920,
+        "height": 1200,
+        "fps": 50
+      },
+      "exposure": 50.0,
+      "gain": 168.0,
+      "saturation": 10.0,
+      "brightness": 0,
+      "contrast": 10,
+      "white_balance_automatic": 1,
+      "power_line_frequency": 0,
+      "auto_exposure": 0
+    },
+    "usb-Arducam_202500915_0001-8-1": {
+      "name": "front-right",
+      "position": "front",
+      "side": "right",
+      "resolution": {
+        "format": "YUYV",
+        "width": 1920,
+        "height": 1200,
+        "fps": 50
+      },
+      "exposure": 50,
+      "gain": 168.0,
+      "saturation": 10.0,
+      "contrast": 10,
+      "brightness": 0,
+      "white_balance_automatic": 1,
+      "power_line_frequency": 0,
+      "auto_exposure": 0
+    }
+  },
+  "version": "1.0"
+}
