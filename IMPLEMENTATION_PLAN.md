@@ -240,7 +240,8 @@ Change resolution/FPS/exposure from UI and persist to JSON.
 Multi-stage vision pipeline with AprilTag detection and overlays.
 
 ### Tasks
-- Implement PreprocessPort chain
+- Implement PreprocessPort chain: add this to capture thread. 
+- From the PreprocessPort till the tag detect all should be in one thread (both cameras)
 - Implement TagDetectorPort (CPU AprilTag)
 - VisionPipeline orchestrator:
   - Raw → Preprocess → Detect
