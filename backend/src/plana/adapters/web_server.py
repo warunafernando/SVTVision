@@ -187,6 +187,29 @@ class WebServerAdapter:
             saturation: Optional[float] = None
             use_case: Optional[str] = None  # apriltag, perception, object-detection
         
+        @self.app.get("/api/cameras/{camera_id}/detection_stats")
+        async def get_detection_stats(camera_id: str) -> Dict[str, Any]:
+            """Get detection statistics for a camera."""
+            manager = self.camera_service.get_camera_manager(camera_id)
+            if not manager or not manager.is_open():
+                raise HTTPException(status_code=404, detail="Camera not open")
+            
+            if not hasattr(manager, 'vision_pipeline') or not manager.vision_pipeline:
+                return {
+                    "camera_id": camera_id,
+                    "has_pipeline": False,
+                    "message": "Camera does not have vision pipeline"
+                }
+            
+            pipeline = manager.vision_pipeline
+            metrics = pipeline.get_metrics()
+            
+            return {
+                "camera_id": camera_id,
+                "has_pipeline": True,
+                "metrics": metrics
+            }
+        
         @self.app.get("/api/cameras/{camera_id}/settings")
         async def get_camera_settings(camera_id: str) -> Dict[str, Any]:
             """Get camera settings (requested and actual).
@@ -425,9 +448,10 @@ class WebServerAdapter:
                 await websocket.close(code=1008, reason="Missing camera parameter")
                 return
             
-            if stage != "raw":
-                # Only raw streaming for Stage 2
-                await websocket.close(code=1008, reason=f"Stage {stage} not yet supported")
+            # Validate stage
+            valid_stages = ["raw", "preprocess", "detect_overlay"]
+            if stage not in valid_stages:
+                await websocket.close(code=1008, reason=f"Invalid stage: {stage}. Must be one of {valid_stages}")
                 return
             
             # Check if camera is open
@@ -444,12 +468,21 @@ class WebServerAdapter:
             
             try:
                 frames_sent = 0
+                last_frame_data = None  # Track last frame to avoid sending duplicates
+                
                 while True:
-                    # Get latest frame
-                    frame_data = manager.get_latest_frame()
+                    # Get latest frame for the requested stage
+                    frame_data = manager.get_latest_frame(stage)
                     
-                    if frame_data:
+                    # Only send if frame changed or is first frame
+                    if frame_data and frame_data != last_frame_data:
                         try:
+                            # Get detections if stage is detect_overlay
+                            detections = []
+                            if stage == "detect_overlay":
+                                detections_raw = manager.get_latest_detections()
+                                detections = [det.to_dict() for det in detections_raw]
+                            
                             # Send frame as base64-encoded JSON message
                             frame_b64 = base64.b64encode(frame_data).decode('utf-8')
                             await websocket.send_json({
@@ -457,18 +490,16 @@ class WebServerAdapter:
                                 "camera_id": camera_id,
                                 "stage": stage,
                                 "data": frame_b64,
-                                "metrics": manager.get_metrics()
+                                "metrics": manager.get_metrics(),
+                                "detections": detections
                             })
+                            last_frame_data = frame_data
                             frames_sent += 1
                             if frames_sent % 100 == 0:
-                                self.logger.info(f"Stream {camera_id}: Sent {frames_sent} frames")
+                                self.logger.info(f"Stream {camera_id} ({stage}): Sent {frames_sent} frames")
                         except Exception as e:
                             self.logger.error(f"Error sending frame for {camera_id}: {e}")
                             break
-                    else:
-                        # No frame available - this is normal if queue is empty briefly
-                        # Don't send no_frame message every time, just wait
-                        pass
                     
                     # Match the camera FPS for streaming rate
                     metrics = manager.get_metrics()

@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any
 from ..ports.camera_port import CameraPort
 from ..ports.stream_encoder_port import StreamEncoderPort
 from ..services.logging_service import LoggingService
+from .vision_pipeline import VisionPipeline
 
 
 class CameraManager:
@@ -19,12 +20,14 @@ class CameraManager:
         camera_port: CameraPort,
         encoder: StreamEncoderPort,
         logger: LoggingService,
-        use_case: str = 'apriltag'
+        use_case: str = 'apriltag',
+        vision_pipeline: Optional[VisionPipeline] = None
     ):
         self.camera_port = camera_port
         self.encoder = encoder
         self.logger = logger
         self.use_case = use_case  # apriltag, perception, object-detection
+        self.vision_pipeline = vision_pipeline  # Vision pipeline for processing stages
         
         self.device_path: Optional[str] = None
         self.width: int = 0
@@ -32,10 +35,15 @@ class CameraManager:
         self.fps: float = 0.0
         self.format: str = ''
         
-        # Bounded frame queue (size=10, drop-oldest)
+        # Bounded frame queue for processed frames (size=10, drop-oldest)
         # Increased from 3 to 10 to reduce drops at high FPS (50fps)
         self.frame_queue: deque = deque(maxlen=10)
         self.frame_queue_lock = threading.Lock()
+        
+        # Raw frame queue for vision pipeline processing (only for cameras with vision pipeline)
+        # Separate queue so capture thread can be fast while vision processing happens asynchronously
+        self.raw_frame_queue: deque = deque(maxlen=5)  # Smaller queue - just for buffering
+        self.raw_frame_queue_lock = threading.Lock()
         
         # Metrics
         self.frames_captured = 0
@@ -68,9 +76,11 @@ class CameraManager:
         self.fps = fps
         self.format = format
         
-        # Clear queue
+        # Clear queues
         with self.frame_queue_lock:
             self.frame_queue.clear()
+        with self.raw_frame_queue_lock:
+            self.raw_frame_queue.clear()
         
         # Reset metrics
         with self.metrics_lock:
@@ -90,9 +100,11 @@ class CameraManager:
         if self.camera_port.is_open():
             self.camera_port.close()
         
-        # Clear queue
+        # Clear queues
         with self.frame_queue_lock:
             self.frame_queue.clear()
+        with self.raw_frame_queue_lock:
+            self.raw_frame_queue.clear()
         
         self.device_path = None
         self.logger.info("Camera closed")
@@ -101,12 +113,34 @@ class CameraManager:
         """Check if camera is open."""
         return self.camera_port.is_open()
     
-    def get_latest_frame(self) -> Optional[bytes]:
-        """Get latest frame from queue."""
-        with self.frame_queue_lock:
-            if self.frame_queue:
-                return self.frame_queue[-1]
+    def get_latest_frame(self, stage: str = "raw") -> Optional[bytes]:
+        """Get latest frame from queue for a specific stage.
+        
+        Args:
+            stage: Stage name ("raw", "preprocess", "detect_overlay")
+        
+        Returns:
+            Latest frame as JPEG bytes, or None if not available
+        """
+        # If vision pipeline is available, get from pipeline
+        if self.vision_pipeline and stage != "raw":
+            stage_frame = self.vision_pipeline.get_latest_frame(stage)
+            if stage_frame:
+                return stage_frame.get_jpeg_bytes()
+            return None
+        
+        # For raw stage, get from frame queue
+        if stage == "raw":
+            with self.frame_queue_lock:
+                if self.frame_queue:
+                    return self.frame_queue[-1]
         return None
+    
+    def get_latest_detections(self) -> list:
+        """Get latest detections from vision pipeline."""
+        if self.vision_pipeline:
+            return self.vision_pipeline.get_latest_detections()
+        return []
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get capture metrics."""
@@ -114,14 +148,16 @@ class CameraManager:
             current_time = time.time()
             age_ms = (current_time - self.last_frame_time) * 1000 if self.last_frame_time > 0 else 0.0
             
-            # Calculate FPS based on frame age
+            # Calculate FPS more accurately using frame age
             fps = 0.0
             if self.last_frame_time > 0 and age_ms < 2000:  # If frame is less than 2 seconds old
-                # Estimate FPS from frame age
+                # Calculate FPS from frame age (inverse of frame interval)
                 if age_ms > 0:
-                    fps = min(1000.0 / age_ms, self.fps)  # Convert age to approximate FPS
+                    calculated_fps = 1000.0 / age_ms
+                    # Clamp to reasonable range (not higher than configured FPS, not negative)
+                    fps = min(max(calculated_fps, 0.0), self.fps if self.fps > 0 else 100.0)
                 else:
-                    fps = self.fps
+                    fps = self.fps if self.fps > 0 else 0.0
             else:
                 fps = 0.0
             
@@ -213,29 +249,20 @@ class CameraManager:
         
         return self.camera_port.apply_control_settings(exposure, gain, saturation)
     
-    def capture_frame_to_queue(self) -> bool:
-        """Capture a single frame and add it to the queue.
+    def enqueue_raw_frame(self, raw_frame: np.ndarray) -> bool:
+        """Enqueue raw frame for vision pipeline processing.
         
-        This is called by the single capture thread in CameraService.
-        Returns True if frame was captured successfully, False otherwise.
+        This is called by the capture thread to quickly put frames in a queue.
+        Returns True if frame was enqueued successfully.
         """
-        if not self.camera_port.is_open():
-            return False
-        
-        # Capture frame - convert to grayscale if use_case is apriltag
-        grayscale = (self.use_case == 'apriltag')
-        frame_data = self.camera_port.capture_frame(grayscale=grayscale)
-        
-        if frame_data:
-            # Frame is already JPEG encoded from OpenCV, just use it directly
-            with self.frame_queue_lock:
-                # Check if queue is full (will drop oldest automatically)
-                was_full = len(self.frame_queue) >= self.frame_queue.maxlen
-                old_frame_count = len(self.frame_queue)
-                self.frame_queue.append(frame_data)
+        try:
+            with self.raw_frame_queue_lock:
+                was_full = len(self.raw_frame_queue) >= self.raw_frame_queue.maxlen
+                old_frame_count = len(self.raw_frame_queue)
+                self.raw_frame_queue.append(raw_frame)
                 
-                # Only count as drop if we're pushing out an old frame when queue was already full
-                if was_full and len(self.frame_queue) == old_frame_count:
+                # Count drops if queue was full
+                if was_full and len(self.raw_frame_queue) == old_frame_count:
                     with self.metrics_lock:
                         self.frames_dropped += 1
             
@@ -244,8 +271,212 @@ class CameraManager:
                 self.last_frame_time = time.time()
             
             return True
-        else:
-            # Frame capture failed
+        except Exception as e:
+            self.logger.error(f"Error enqueueing raw frame: {e}")
+            with self.metrics_lock:
+                self.frames_dropped += 1
+            return False
+    
+    def process_vision_pipeline(self) -> bool:
+        """Process one frame from raw queue through vision pipeline.
+        
+        This is called by the vision pipeline thread.
+        Returns True if a frame was processed, False if queue was empty.
+        """
+        if not self.vision_pipeline or self.use_case != 'apriltag':
+            return False
+        
+        # Get raw frame from queue
+        raw_frame = None
+        with self.raw_frame_queue_lock:
+            if self.raw_frame_queue:
+                raw_frame = self.raw_frame_queue.popleft()
+        
+        if raw_frame is None:
+            return False
+        
+        try:
+            # Convert raw frame to grayscale for AprilTag cameras
+            if len(raw_frame.shape) == 3:
+                raw_frame_gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
+                # Convert to 3-channel for consistency (BGR format but grayscale)
+                raw_frame_gray_bgr = cv2.cvtColor(raw_frame_gray, cv2.COLOR_GRAY2BGR)
+            else:
+                raw_frame_gray_bgr = raw_frame
+            
+            # Process frame through vision pipeline (pass grayscale version)
+            pipeline_result = self.vision_pipeline.process_frame(raw_frame_gray_bgr)
+            
+            # Store raw frame JPEG in processed frame queue
+            if pipeline_result.get("raw"):
+                raw_jpeg = pipeline_result["raw"].get_jpeg_bytes()
+                with self.frame_queue_lock:
+                    was_full = len(self.frame_queue) >= self.frame_queue.maxlen
+                    old_frame_count = len(self.frame_queue)
+                    self.frame_queue.append(raw_jpeg)
+                    
+                    if was_full and len(self.frame_queue) == old_frame_count:
+                        with self.metrics_lock:
+                            self.frames_dropped += 1
+            
+            return True
+        
+        except Exception as e:
+            self.logger.error(f"Error processing vision pipeline: {e}")
+            with self.metrics_lock:
+                self.frames_dropped += 1
+            return False
+    
+    def _process_captured_frame(self, raw_frame: np.ndarray) -> bool:
+        """Process a captured raw frame through pipeline and add to queue.
+        
+        This is separated from capture to reduce blocking between cameras.
+        """
+        try:
+            # If vision pipeline exists and use_case is 'apriltag', process through pipeline
+            if self.vision_pipeline and self.use_case == 'apriltag':
+                # Convert raw frame to grayscale for AprilTag cameras
+                if len(raw_frame.shape) == 3:
+                    raw_frame_gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
+                    # Convert to 3-channel for consistency (BGR format but grayscale)
+                    raw_frame_gray_bgr = cv2.cvtColor(raw_frame_gray, cv2.COLOR_GRAY2BGR)
+                else:
+                    raw_frame_gray_bgr = raw_frame
+                
+                # Process frame through vision pipeline (pass grayscale version)
+                pipeline_result = self.vision_pipeline.process_frame(raw_frame_gray_bgr)
+                
+                # Store raw frame JPEG
+                if pipeline_result.get("raw"):
+                    raw_jpeg = pipeline_result["raw"].get_jpeg_bytes()
+                    with self.frame_queue_lock:
+                        was_full = len(self.frame_queue) >= self.frame_queue.maxlen
+                        old_frame_count = len(self.frame_queue)
+                        self.frame_queue.append(raw_jpeg)
+                        
+                        if was_full and len(self.frame_queue) == old_frame_count:
+                            with self.metrics_lock:
+                                self.frames_dropped += 1
+                
+                with self.metrics_lock:
+                    self.frames_captured += 1
+                    self.last_frame_time = time.time()
+                
+                return True
+            else:
+                # Legacy behavior: convert to JPEG and store
+                grayscale = (self.use_case == 'apriltag')
+                frame_data = self.camera_port.capture_frame(grayscale=grayscale)
+                
+                if frame_data:
+                    with self.frame_queue_lock:
+                        was_full = len(self.frame_queue) >= self.frame_queue.maxlen
+                        old_frame_count = len(self.frame_queue)
+                        self.frame_queue.append(frame_data)
+                        
+                        if was_full and len(self.frame_queue) == old_frame_count:
+                            with self.metrics_lock:
+                                self.frames_dropped += 1
+                    
+                    with self.metrics_lock:
+                        self.frames_captured += 1
+                        self.last_frame_time = time.time()
+                    
+                    return True
+                else:
+                    with self.metrics_lock:
+                        self.frames_dropped += 1
+                    return False
+        
+        except Exception as e:
+            self.logger.error(f"Error processing frame: {e}")
+            with self.metrics_lock:
+                self.frames_dropped += 1
+            return False
+    
+    def capture_frame_to_queue(self) -> bool:
+        """Capture a single frame and add it to the queue.
+        
+        This is called by the single capture thread in CameraService.
+        Returns True if frame was captured successfully, False otherwise.
+        
+        Pipeline flow:
+        1. Capture raw frame (numpy array)
+        2. If vision pipeline exists and use_case is 'apriltag':
+           - Process through pipeline (preprocess → detect → overlay)
+           - Store raw, preprocess, and detect_overlay frames
+        3. If no vision pipeline or use_case is not 'apriltag':
+           - Convert to JPEG and store in raw queue (legacy behavior)
+        """
+        if not self.camera_port.is_open():
+            return False
+        
+        try:
+            # Capture raw frame as numpy array
+            raw_frame = self.camera_port.capture_frame_raw()
+            
+            if raw_frame is None:
+                with self.metrics_lock:
+                    self.frames_dropped += 1
+                return False
+            
+            # If vision pipeline exists and use_case is 'apriltag', process through pipeline
+            if self.vision_pipeline and self.use_case == 'apriltag':
+                # Convert raw frame to grayscale for AprilTag cameras
+                if len(raw_frame.shape) == 3:
+                    raw_frame_gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
+                    # Convert to 3-channel for consistency (BGR format but grayscale)
+                    raw_frame_gray_bgr = cv2.cvtColor(raw_frame_gray, cv2.COLOR_GRAY2BGR)
+                else:
+                    raw_frame_gray_bgr = raw_frame
+                
+                # Process frame through vision pipeline (pass grayscale version)
+                pipeline_result = self.vision_pipeline.process_frame(raw_frame_gray_bgr)
+                
+                # Store raw frame JPEG
+                if pipeline_result.get("raw"):
+                    raw_jpeg = pipeline_result["raw"].get_jpeg_bytes()
+                    with self.frame_queue_lock:
+                        was_full = len(self.frame_queue) >= self.frame_queue.maxlen
+                        old_frame_count = len(self.frame_queue)
+                        self.frame_queue.append(raw_jpeg)
+                        
+                        if was_full and len(self.frame_queue) == old_frame_count:
+                            with self.metrics_lock:
+                                self.frames_dropped += 1
+                
+                with self.metrics_lock:
+                    self.frames_captured += 1
+                    self.last_frame_time = time.time()
+                
+                return True
+            else:
+                # Legacy behavior: convert to JPEG and store
+                grayscale = (self.use_case == 'apriltag')
+                frame_data = self.camera_port.capture_frame(grayscale=grayscale)
+                
+                if frame_data:
+                    with self.frame_queue_lock:
+                        was_full = len(self.frame_queue) >= self.frame_queue.maxlen
+                        old_frame_count = len(self.frame_queue)
+                        self.frame_queue.append(frame_data)
+                        
+                        if was_full and len(self.frame_queue) == old_frame_count:
+                            with self.metrics_lock:
+                                self.frames_dropped += 1
+                    
+                    with self.metrics_lock:
+                        self.frames_captured += 1
+                        self.last_frame_time = time.time()
+                    
+                    return True
+                else:
+                    with self.metrics_lock:
+                        self.frames_dropped += 1
+                    return False
+        
+        except Exception as e:
+            self.logger.error(f"Error capturing frame: {e}")
             with self.metrics_lock:
                 self.frames_dropped += 1
             return False

@@ -128,6 +128,16 @@ class DebugTreeManager:
         if camera_manager_node:
             self._update_camera_nodes(camera_manager_node)
         
+        # Update vision pipeline node with real metrics
+        vision_pipeline_node = None
+        for child in self.root_node.children:
+            if child.id == "vision_pipeline":
+                vision_pipeline_node = child
+                break
+        
+        if vision_pipeline_node:
+            self._update_vision_pipeline_node(vision_pipeline_node)
+        
         # Update camera_capture node with real metrics if camera service available
         if camera_capture_node and self.camera_service:
             managers = self.camera_service.get_all_camera_managers()
@@ -271,6 +281,177 @@ class DebugTreeManager:
                 )
                 # Insert at the end, after camera_discovery and camera_capture
                 camera_manager_node.children.append(camera_node)
+    
+    def _update_vision_pipeline_node(self, vision_pipeline_node: DebugTreeNode) -> None:
+        """Update vision pipeline node with per-camera pipeline metrics."""
+        if not self.camera_service:
+            return
+        
+        # Get all camera managers
+        managers = self.camera_service.get_all_camera_managers()
+        
+        # Find cameras with vision pipelines
+        pipeline_cameras = []
+        total_preprocess_fps = 0.0
+        total_tags_detected = 0
+        total_frames_processed = 0
+        active_pipeline_count = 0
+        
+        for camera_id, manager in managers.items():
+            if manager.is_open() and hasattr(manager, 'vision_pipeline') and manager.vision_pipeline:
+                pipeline = manager.vision_pipeline
+                metrics = pipeline.get_metrics()
+                
+                frames_processed = metrics.get("frames_processed", 0)
+                detections_count = metrics.get("detections_count", 0)
+                latest_detections_count = metrics.get("latest_detections_count", 0)
+                
+                # Estimate FPS from frames_processed (assuming ~30fps processing)
+                # This is approximate - we could track timing if needed
+                camera_metrics = manager.get_metrics()
+                camera_fps = camera_metrics.get("fps", 0.0)
+                preprocess_fps = camera_fps  # Preprocess FPS matches camera FPS
+                
+                total_preprocess_fps += preprocess_fps
+                total_tags_detected += latest_detections_count
+                total_frames_processed += frames_processed
+                active_pipeline_count += 1
+                
+                # Get camera name
+                camera_name = camera_id
+                if self.camera_discovery:
+                    try:
+                        cameras = self.camera_discovery.get_camera_list()
+                        for cam in cameras:
+                            if cam.get("id") == camera_id:
+                                camera_name = cam.get("custom_name") or cam.get("name", camera_id)
+                                break
+                    except:
+                        pass
+                
+                pipeline_cameras.append({
+                    "camera_id": camera_id,
+                    "camera_name": camera_name,
+                    "preprocess_fps": preprocess_fps,
+                    "tags_detected": latest_detections_count,
+                    "frames_processed": frames_processed,
+                    "total_detections": detections_count
+                })
+        
+        # Update vision pipeline status
+        if active_pipeline_count > 0:
+            vision_pipeline_node.status = NodeStatus.OK
+            vision_pipeline_node.reason = f"{active_pipeline_count} camera pipeline(s) active"
+            avg_preprocess_fps = total_preprocess_fps / active_pipeline_count if active_pipeline_count > 0 else 0.0
+            vision_pipeline_node.metrics = {
+                "fps": round(avg_preprocess_fps, 1),
+                "tags_detected": total_tags_detected,
+                "frames_processed": total_frames_processed,
+                "lastUpdateAge": 100
+            }
+        else:
+            vision_pipeline_node.status = NodeStatus.OK  # OK when no cameras, not WARN
+            vision_pipeline_node.reason = "No cameras with pipeline open"
+            vision_pipeline_node.metrics = {
+                "fps": 0.0,
+                "tags_detected": 0,
+                "frames_processed": 0,
+                "lastUpdateAge": 5000
+            }
+        
+        # Update preprocess and detection child nodes
+        preprocess_node = None
+        detection_node = None
+        for child in vision_pipeline_node.children:
+            if child.id == "preprocess":
+                preprocess_node = child
+            elif child.id == "detection":
+                detection_node = child
+        
+        # Update preprocess node
+        if preprocess_node:
+            if active_pipeline_count > 0:
+                avg_preprocess_fps = total_preprocess_fps / active_pipeline_count if active_pipeline_count > 0 else 0.0
+                preprocess_node.status = NodeStatus.OK
+                preprocess_node.reason = f"Processing {active_pipeline_count} camera(s)"
+                preprocess_node.metrics = {
+                    "fps": round(avg_preprocess_fps, 1),
+                    "lastUpdateAge": 100
+                }
+            else:
+                preprocess_node.status = NodeStatus.STALE
+                preprocess_node.reason = "No input"
+                preprocess_node.metrics = {
+                    "fps": 0.0,
+                    "lastUpdateAge": 5000
+                }
+        
+        # Update detection node
+        if detection_node:
+            if active_pipeline_count > 0:
+                detection_node.status = NodeStatus.OK
+                detection_node.reason = f"{total_tags_detected} tag(s) detected"
+                detection_node.metrics = {
+                    "fps": round(total_preprocess_fps / active_pipeline_count, 1) if active_pipeline_count > 0 else 0.0,
+                    "tags_detected": total_tags_detected,
+                    "latency": 10,  # Approximate detection latency
+                    "lastUpdateAge": 100
+                }
+            else:
+                detection_node.status = NodeStatus.STALE
+                detection_node.reason = "No input"
+                detection_node.metrics = {
+                    "fps": 0.0,
+                    "tags_detected": 0,
+                    "latency": 0,
+                    "lastUpdateAge": 5000
+                }
+        
+        # Create/update per-camera pipeline nodes
+        # Remove old pipeline camera nodes that no longer exist
+        vision_pipeline_node.children = [
+            child for child in vision_pipeline_node.children 
+            if child.id in ["preprocess", "detection"] or any(p["camera_id"] == child.id for p in pipeline_cameras)
+        ]
+        
+        # Add/update per-camera pipeline nodes
+        for pipeline_data in pipeline_cameras:
+            camera_id = pipeline_data["camera_id"]
+            camera_name = pipeline_data["camera_name"]
+            
+            # Find existing pipeline camera node
+            pipeline_camera_node = None
+            for child in vision_pipeline_node.children:
+                if child.id == camera_id:
+                    pipeline_camera_node = child
+                    break
+            
+            if pipeline_camera_node:
+                # Update existing node
+                pipeline_camera_node.name = f"{camera_name} Pipeline"
+                pipeline_camera_node.status = NodeStatus.OK
+                pipeline_camera_node.reason = f"{pipeline_data['tags_detected']} tag(s)"
+                pipeline_camera_node.metrics = {
+                    "fps": round(pipeline_data["preprocess_fps"], 1),
+                    "tags_detected": pipeline_data["tags_detected"],
+                    "frames_processed": pipeline_data["frames_processed"],
+                    "lastUpdateAge": 100
+                }
+            else:
+                # Create new node (insert after preprocess and detection)
+                pipeline_camera_node = DebugTreeNode(
+                    id=camera_id,
+                    name=f"{camera_name} Pipeline",
+                    status=NodeStatus.OK,
+                    reason=f"{pipeline_data['tags_detected']} tag(s)",
+                    metrics={
+                        "fps": round(pipeline_data["preprocess_fps"], 1),
+                        "tags_detected": pipeline_data["tags_detected"],
+                        "frames_processed": pipeline_data["frames_processed"],
+                        "lastUpdateAge": 100
+                    }
+                )
+                vision_pipeline_node.children.append(pipeline_camera_node)
     
     def get_tree_dict(self) -> dict:
         """Get debug tree as dictionary."""

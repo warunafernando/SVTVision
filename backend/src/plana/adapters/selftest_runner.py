@@ -24,6 +24,8 @@ class SelfTestRunner:
             return self._run_open_stream_test()
         elif test_name == "settings_roundtrip":
             return self._run_settings_roundtrip_test()
+        elif test_name == "tag_detect":
+            return self._run_tag_detect_test()
         else:
             return {
                 "test": test_name,
@@ -317,6 +319,119 @@ class SelfTestRunner:
                 "test": "settings_roundtrip",
                 "pass": False,
                 "message": f"Exception during settings test: {str(e)}",
+                "details": {
+                    "camera_id": camera_id,
+                    "error": str(e)
+                }
+            }
+    
+    def _run_tag_detect_test(self) -> Dict[str, Any]:
+        """Run AprilTag detection test."""
+        import time
+        
+        if not self.camera_discovery:
+            return {
+                "test": "tag_detect",
+                "pass": False,
+                "message": "Camera discovery not available"
+            }
+        
+        if not self.camera_service:
+            return {
+                "test": "tag_detect",
+                "pass": False,
+                "message": "Camera service not available"
+            }
+        
+        cameras = self.camera_discovery.get_camera_list()
+        
+        if len(cameras) == 0:
+            return {
+                "test": "tag_detect",
+                "pass": False,
+                "status": "WARN",
+                "message": "No cameras found for tag detection test",
+                "details": {
+                    "camera_count": 0
+                }
+            }
+        
+        # Test first camera with apriltag use_case
+        test_camera = cameras[0]
+        camera_id = test_camera["id"]
+        device_path = test_camera.get("device_path")
+        
+        if not device_path:
+            return {
+                "test": "tag_detect",
+                "pass": False,
+                "message": f"Camera {camera_id} has no device path"
+            }
+        
+        try:
+            # Open camera (will use apriltag pipeline if use_case is 'apriltag')
+            opened = self.camera_service.open_camera(camera_id, device_path)
+            if not opened:
+                return {
+                    "test": "tag_detect",
+                    "pass": False,
+                    "message": f"Failed to open camera {camera_id}"
+                }
+            
+            # Wait for pipeline to process some frames
+            time.sleep(2.0)
+            
+            manager = self.camera_service.get_camera_manager(camera_id)
+            if not manager:
+                self.camera_service.close_camera(camera_id)
+                return {
+                    "test": "tag_detect",
+                    "pass": False,
+                    "message": "Camera manager not found after open"
+                }
+            
+            # Check if vision pipeline exists and get detections
+            detections = manager.get_latest_detections()
+            detection_count = len(detections) if detections else 0
+            
+            # Get metrics
+            metrics = manager.get_metrics()
+            frames_captured = metrics.get("frames_captured", 0)
+            
+            # Close camera
+            self.camera_service.close_camera(camera_id)
+            
+            # Test passes if pipeline is working (even if no tags detected)
+            # The pipeline working means it's processing frames correctly
+            success = frames_captured > 0
+            
+            return {
+                "test": "tag_detect",
+                "pass": success,
+                "status": "PASS" if success else "FAIL",
+                "message": f"Tag detection test: {frames_captured} frames processed, {detection_count} tags detected" + (
+                    "" if success else " (no frames processed)"
+                ),
+                "details": {
+                    "camera_id": camera_id,
+                    "device_path": device_path,
+                    "frames_captured": frames_captured,
+                    "detection_count": detection_count,
+                    "detections": [{"tag_id": det.tag_id, "center": det.center} for det in detections] if detections else []
+                }
+            }
+            
+        except Exception as e:
+            # Make sure to close camera on error
+            try:
+                self.camera_service.close_camera(camera_id)
+            except:
+                pass
+            
+            return {
+                "test": "tag_detect",
+                "pass": False,
+                "message": f"Exception during tag detection test: {str(e)}",
                 "details": {
                     "camera_id": camera_id,
                     "error": str(e)

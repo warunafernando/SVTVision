@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple, Any
+import numpy as np
 
 
 class CameraPort(ABC):
@@ -46,6 +47,15 @@ class CameraPort(ABC):
         
         Returns:
             Frame data as bytes (JPEG encoded), or None if capture failed
+        """
+        pass
+    
+    @abstractmethod
+    def capture_frame_raw(self) -> Optional[np.ndarray]:
+        """Capture a single raw frame.
+        
+        Returns:
+            Raw frame data as numpy array (BGR format), or None if capture failed
         """
         pass
     

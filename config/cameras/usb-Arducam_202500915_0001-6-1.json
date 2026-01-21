@@ -1,9 +1,9 @@
 {
   "brightness": 0,
-  "contrast": 10,
-  "saturation": 10.0,
+  "contrast": 17,
+  "saturation": 13.0,
   "white_balance_automatic": 1,
-  "gain": 168.0,
+  "gain": 467.0,
   "power_line_frequency": 0,
   "auto_exposure": 0
 }

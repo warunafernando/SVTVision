@@ -6,6 +6,9 @@ from typing import Dict, Optional, Any
 from .camera_manager import CameraManager
 from ..adapters.opencv_camera import OpenCVCameraAdapter
 from ..adapters.mjpeg_encoder import MJPEGEncoderAdapter
+from ..adapters.preprocess_adapter import PreprocessAdapter
+from ..adapters.apriltag_detector_adapter import AprilTagDetectorAdapter
+from ..domain.vision_pipeline import VisionPipeline
 from ..services.logging_service import LoggingService
 from ..services.camera_config_service import CameraConfigService
 
@@ -27,7 +30,12 @@ class CameraService:
         self.capture_running = False
         self.capture_thread_lock = threading.Lock()
         
-        self.logger.info("CameraService initialized with single-threaded capture")
+        # Vision pipeline processing thread
+        self.vision_pipeline_thread: Optional[threading.Thread] = None
+        self.vision_pipeline_running = False
+        self.vision_pipeline_thread_lock = threading.Lock()
+        
+        self.logger.info("CameraService initialized with separate capture and vision pipeline threads")
     
     def open_camera(
         self,
@@ -73,8 +81,38 @@ class CameraService:
         camera_config = self.camera_config_service.get_camera_config(camera_id) or {}
         use_case = camera_config.get('use_case', 'apriltag')
         
-        # Create manager with use_case
-        manager = CameraManager(camera_adapter, encoder, self.logger, use_case=use_case)
+        # Create vision pipeline if use_case is 'apriltag'
+        vision_pipeline = None
+        if use_case == 'apriltag':
+            preprocessor = PreprocessAdapter(self.logger)
+            
+            # Load camera-specific preprocessing parameters if available
+            preprocessing_config = camera_config.get('preprocessing', {})
+            if preprocessing_config:
+                preprocessor.set_config(preprocessing_config)
+                self.logger.info(f"Loaded camera-specific preprocessing config for {camera_id}: {preprocessing_config}")
+            else:
+                # Default optimized settings for stable detection
+                default_preprocessing = {
+                    "blur_kernel_size": 3,
+                    "adaptive_block_size": 15,
+                    "adaptive_c": 3,
+                    "morphology": False
+                }
+                preprocessor.set_config(default_preprocessing)
+            
+            tag_detector = AprilTagDetectorAdapter(self.logger, family="tag36h11")
+            vision_pipeline = VisionPipeline(preprocessor, tag_detector, self.logger)
+            self.logger.info(f"Created vision pipeline for camera {camera_id}")
+        
+        # Create manager with use_case and vision_pipeline
+        manager = CameraManager(
+            camera_adapter,
+            encoder,
+            self.logger,
+            use_case=use_case,
+            vision_pipeline=vision_pipeline
+        )
         
         # Open camera
         if not manager.open(device_path, width, height, fps, format):
@@ -94,6 +132,9 @@ class CameraService:
         # Start single capture thread if not already running
         self._ensure_capture_thread_running()
         
+        # Start vision pipeline thread if not already running
+        self._ensure_vision_pipeline_thread_running()
+        
         self.logger.info(f"Camera {camera_id} opened successfully")
         return True
     
@@ -111,6 +152,12 @@ class CameraService:
         with self.capture_thread_lock:
             if len(self.camera_managers) == 0:
                 self._stop_capture_thread()
+        
+        # Stop vision pipeline thread if no cameras with pipelines remain
+        cameras_with_pipelines = sum(1 for m in self.camera_managers.values() 
+                                     if hasattr(m, 'vision_pipeline') and m.vision_pipeline)
+        if cameras_with_pipelines == 0:
+            self._stop_vision_pipeline_thread()
         
         self.logger.info(f"Camera {camera_id} closed")
         return True
@@ -217,21 +264,63 @@ class CameraService:
                 time.sleep(0.1)
                 continue
             
-            # Process each camera
+            # Process each camera - just capture and enqueue frames quickly
+            # Vision pipeline processing happens in separate thread
             for camera_id, manager in cameras_to_process:
                 if not self.capture_running:
                     break
                 
-                # Capture frame for this camera
+                # Capture raw frame quickly and enqueue for vision processing
                 try:
-                    manager.capture_frame_to_queue()
+                    if manager.camera_port.is_open():
+                        raw_frame = manager.camera_port.capture_frame_raw()
+                        if raw_frame is not None:
+                            # If camera has vision pipeline, enqueue for processing
+                            if manager.vision_pipeline and manager.use_case == 'apriltag':
+                                manager.enqueue_raw_frame(raw_frame)
+                            else:
+                                # No vision pipeline - convert to JPEG directly
+                                import cv2
+                                grayscale = (manager.use_case == 'apriltag')
+                                if grayscale and len(raw_frame.shape) == 3:
+                                    gray_frame = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
+                                    frame_to_encode = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2BGR)
+                                else:
+                                    frame_to_encode = raw_frame
+                                
+                                _, jpeg_bytes = cv2.imencode('.jpg', frame_to_encode, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                                if jpeg_bytes is not None:
+                                    frame_data = jpeg_bytes.tobytes()
+                                    with manager.frame_queue_lock:
+                                        manager.frame_queue.append(frame_data)
+                                    with manager.metrics_lock:
+                                        manager.frames_captured += 1
+                                        manager.last_frame_time = time.time()
+                                else:
+                                    with manager.metrics_lock:
+                                        manager.frames_dropped += 1
+                        else:
+                            with manager.metrics_lock:
+                                manager.frames_dropped += 1
                 except Exception as e:
                     self.logger.error(f"Error capturing frame for camera {camera_id}: {e}")
+                    with manager.metrics_lock:
+                        manager.frames_dropped += 1
             
-            # Adaptive sleep: aim for ~30 iterations per second when cameras are present
-            # This allows multiple captures per second for each camera
+            # Adaptive sleep: use the highest FPS among open cameras
+            # Calculate the minimum frame interval needed to support all cameras
             elapsed = time.time() - iteration_start
-            sleep_time = max(0.0, (1.0 / 30.0) - elapsed)  # Target ~30 iterations/sec
+            max_fps = 30.0  # Default minimum
+            for camera_id, manager in cameras_to_process:
+                if manager.is_open():
+                    camera_fps = manager.fps if hasattr(manager, 'fps') else 30.0
+                    if camera_fps > max_fps:
+                        max_fps = camera_fps
+            
+            # Target iterations per second should be at least the max FPS
+            # Add a small buffer (1.2x) to ensure we don't miss frames
+            target_iterations_per_sec = max_fps * 1.2
+            sleep_time = max(0.0, (1.0 / target_iterations_per_sec) - elapsed)
             
             if sleep_time > 0:
                 time.sleep(sleep_time)
@@ -242,3 +331,75 @@ class CameraService:
                 self.logger.info(f"Capture loop: {iteration_count} iterations, {active_cameras} active cameras")
         
         self.logger.info("Single capture loop stopped")
+    
+    def _ensure_vision_pipeline_thread_running(self) -> None:
+        """Ensure the vision pipeline processing thread is running."""
+        with self.vision_pipeline_thread_lock:
+            if not self.vision_pipeline_running:
+                # Check if any cameras have vision pipelines
+                has_pipelines = any(
+                    hasattr(m, 'vision_pipeline') and m.vision_pipeline
+                    for m in self.camera_managers.values()
+                )
+                if has_pipelines:
+                    self.vision_pipeline_running = True
+                    self.vision_pipeline_thread = threading.Thread(
+                        target=self._vision_pipeline_loop, daemon=True
+                    )
+                    self.vision_pipeline_thread.start()
+                    self.logger.info("Vision pipeline processing thread started")
+    
+    def _stop_vision_pipeline_thread(self) -> None:
+        """Stop the vision pipeline processing thread."""
+        if self.vision_pipeline_running:
+            self.vision_pipeline_running = False
+            if self.vision_pipeline_thread:
+                self.vision_pipeline_thread.join(timeout=2.0)
+                self.vision_pipeline_thread = None
+            self.logger.info("Vision pipeline processing thread stopped")
+    
+    def _vision_pipeline_loop(self) -> None:
+        """Vision pipeline processing thread.
+        
+        This thread processes frames from raw queues through vision pipelines.
+        Runs continuously while cameras with pipelines are open.
+        """
+        self.logger.info("Vision pipeline processing loop started")
+        
+        while self.vision_pipeline_running:
+            processed_any = False
+            
+            # Get list of camera managers with vision pipelines
+            with self.vision_pipeline_thread_lock:
+                if not self.vision_pipeline_running:
+                    break
+                cameras_to_process = [
+                    (camera_id, manager)
+                    for camera_id, manager in self.camera_managers.items()
+                    if manager.is_open() and 
+                       hasattr(manager, 'vision_pipeline') and 
+                       manager.vision_pipeline and 
+                       manager.use_case == 'apriltag'
+                ]
+            
+            # If no cameras with pipelines, wait a bit
+            if not cameras_to_process:
+                time.sleep(0.1)
+                continue
+            
+            # Process one frame from each camera's raw queue
+            for camera_id, manager in cameras_to_process:
+                if not self.vision_pipeline_running:
+                    break
+                
+                try:
+                    if manager.process_vision_pipeline():
+                        processed_any = True
+                except Exception as e:
+                    self.logger.error(f"Error processing vision pipeline for camera {camera_id}: {e}")
+            
+            # Small sleep if we didn't process anything (all queues empty)
+            if not processed_any:
+                time.sleep(0.01)  # 10ms sleep when queues are empty
+        
+        self.logger.info("Vision pipeline processing loop stopped")

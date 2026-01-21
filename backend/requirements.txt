@@ -6,3 +6,4 @@ v4l2-python3==0.4.2
 pyudev==0.24.1
 opencv-python-headless==4.8.1.78
 numpy==1.24.3
+apriltag==3.3.0

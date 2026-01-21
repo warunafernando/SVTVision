@@ -23,7 +23,7 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
   onCameraSelect,
 }) => {
   const [selectedStage, setSelectedStage] = useState<Stage>('raw');
-  const [detections] = useState<Detection[]>([]); // Mock data for now
+  const [detections, setDetections] = useState<Detection[]>([]);
   const [metrics, setMetrics] = useState<StreamMetrics>({
     fps: 0,
     drops: 0,
@@ -44,8 +44,8 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
 
   // WebSocket connection for video streaming
   useEffect(() => {
-    if (!selectedCameraId || !isCameraOpen || selectedStage !== 'raw') {
-      // Close WebSocket if camera closed or stage changed
+    if (!selectedCameraId || !isCameraOpen) {
+      // Close WebSocket if camera closed
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -90,6 +90,31 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
               last_frame_age: data.metrics.last_frame_age || 0
             });
           }
+          
+          // Update detections if available
+          if (data.detections && Array.isArray(data.detections)) {
+            const now = Date.now();
+            const detectionList: Detection[] = data.detections.map((det: any) => ({
+              tagId: det.tag_id || 0,
+              count: 1, // Will be aggregated below
+              lastSeen: now,
+              latency: 0 // Could be calculated if timestamp is available
+            }));
+            
+            // Aggregate detections by tag ID
+            const aggregated: Map<number, Detection> = new Map();
+            detectionList.forEach(det => {
+              const existing = aggregated.get(det.tagId);
+              if (existing) {
+                existing.count += det.count;
+                existing.lastSeen = Math.max(existing.lastSeen, det.lastSeen);
+              } else {
+                aggregated.set(det.tagId, det);
+              }
+            });
+            
+            setDetections(Array.from(aggregated.values()));
+          }
         } else if (data.type === 'no_frame') {
           setHasFrames(false); // Reset when no frames
         } else {
@@ -116,7 +141,7 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
     };
   }, [selectedCameraId, isCameraOpen, selectedStage]);
 
-  const shouldShowPlaceholder = !(selectedCameraId && isCameraOpen && selectedStage === 'raw' && streamConnected && hasFrames);
+  const shouldShowPlaceholder = !(selectedCameraId && isCameraOpen && streamConnected && hasFrames);
 
   return (
     <div className="viewer-pane">
@@ -161,7 +186,6 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
             key={stage.key}
             className={`viewer-tab ${selectedStage === stage.key ? 'active' : ''}`}
             onClick={() => setSelectedStage(stage.key)}
-            disabled={stage.key !== 'raw' && selectedStage === stage.key}
           >
             {stage.label}
           </button>
@@ -170,7 +194,7 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
 
       <div className="viewer-content">
         {/* Placeholder - ALWAYS render with content */}
-        {!(selectedCameraId && isCameraOpen && selectedStage === 'raw' && streamConnected && hasFrames) && (
+        {!(selectedCameraId && isCameraOpen && streamConnected && hasFrames) && (
           <div className="viewer-placeholder">
             {selectedCameraId && isCameraOpen ? (
               !streamConnected ? (
@@ -179,8 +203,6 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
                   <p className="viewer-note">Camera: {selectedCameraId}</p>
                   <p className="viewer-note">Stage: {selectedStage}</p>
                 </>
-              ) : selectedStage !== 'raw' ? (
-                <p>{selectedStage} view coming soon</p>
               ) : (
                 <p>Stream connected - waiting for frames...</p>
               )
@@ -215,7 +237,7 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
             height: '100%',
             objectFit: 'contain',
             zIndex: hasFrames ? 200 : -1, // Hidden when no frames
-            display: (selectedCameraId && isCameraOpen && selectedStage === 'raw' && streamConnected && hasFrames) ? 'block' : 'none'
+            display: (selectedCameraId && isCameraOpen && streamConnected && hasFrames) ? 'block' : 'none'
           }}
           onLoad={() => {
             // Ensure hasFrames is set when image loads successfully
@@ -245,14 +267,17 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
                 </td>
               </tr>
             ) : (
-              detections.map((detection, index) => (
-                <tr key={index}>
-                  <td>{detection.tagId}</td>
-                  <td>{detection.count}</td>
-                  <td>{detection.lastSeen}ms ago</td>
-                  <td>{detection.latency}ms</td>
-                </tr>
-              ))
+              detections.map((detection, index) => {
+                const lastSeenAgo = Date.now() - detection.lastSeen;
+                return (
+                  <tr key={index}>
+                    <td>{detection.tagId}</td>
+                    <td>{detection.count}</td>
+                    <td>{Math.round(lastSeenAgo)}ms ago</td>
+                    <td>{detection.latency}ms</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

@@ -5,5 +5,12 @@
   "white_balance_automatic": 1,
   "gain": 168.0,
   "power_line_frequency": 0,
-  "auto_exposure": 0
+  "auto_exposure": 0,
+  "preprocessing": {
+    "blur_kernel_size": 5,
+    "threshold_type": "adaptive",
+    "adaptive_block_size": 21,
+    "adaptive_c": 5,
+    "morphology": false
+  }
 }

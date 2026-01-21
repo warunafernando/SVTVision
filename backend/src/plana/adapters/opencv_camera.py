@@ -112,6 +112,25 @@ class OpenCVCameraAdapter(CameraPort):
             self.logger.debug(f"Error capturing frame: {e}")
             return None
     
+    def capture_frame_raw(self) -> Optional[np.ndarray]:
+        """Capture a single raw frame as numpy array.
+        
+        Returns:
+            Raw frame data as numpy array (BGR format), or None if capture failed
+        """
+        if not self.is_open():
+            return None
+        
+        try:
+            ret, frame = self.cap.read()
+            if not ret or frame is None:
+                return None
+            return frame
+            
+        except Exception as e:
+            self.logger.debug(f"Error capturing raw frame: {e}")
+            return None
+    
     def get_actual_settings(self) -> dict:
         """Get actual camera settings."""
         if not self.is_open():

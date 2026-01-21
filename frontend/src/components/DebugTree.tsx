@@ -82,6 +82,12 @@ const DebugTree: React.FC<DebugTreeProps> = ({ nodes, onNodeClick, selectedNodeI
             {node.metrics.drops !== undefined && (
               <span className="metric">{node.metrics.drops} drops</span>
             )}
+            {node.metrics.tags_detected !== undefined && (
+              <span className="metric">{node.metrics.tags_detected} tags</span>
+            )}
+            {node.metrics.frames_processed !== undefined && (
+              <span className="metric">{node.metrics.frames_processed} frames</span>
+            )}
             {node.metrics.lastUpdateAge !== undefined && (
               <span className="metric">{node.metrics.lastUpdateAge}ms ago</span>
             )}
