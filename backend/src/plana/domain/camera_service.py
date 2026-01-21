@@ -69,8 +69,12 @@ class CameraService:
         camera_adapter = OpenCVCameraAdapter(self.logger)
         encoder = MJPEGEncoderAdapter(self.logger)
         
-        # Create manager
-        manager = CameraManager(camera_adapter, encoder, self.logger)
+        # Get use_case from config (default to 'apriltag')
+        camera_config = self.camera_config_service.get_camera_config(camera_id) or {}
+        use_case = camera_config.get('use_case', 'apriltag')
+        
+        # Create manager with use_case
+        manager = CameraManager(camera_adapter, encoder, self.logger, use_case=use_case)
         
         # Open camera
         if not manager.open(device_path, width, height, fps, format):

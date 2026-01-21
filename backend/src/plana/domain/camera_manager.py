@@ -2,6 +2,8 @@
 
 import threading
 import time
+import cv2
+import numpy as np
 from collections import deque
 from typing import Optional, Dict, Any
 from ..ports.camera_port import CameraPort
@@ -16,11 +18,13 @@ class CameraManager:
         self,
         camera_port: CameraPort,
         encoder: StreamEncoderPort,
-        logger: LoggingService
+        logger: LoggingService,
+        use_case: str = 'apriltag'
     ):
         self.camera_port = camera_port
         self.encoder = encoder
         self.logger = logger
+        self.use_case = use_case  # apriltag, perception, object-detection
         
         self.device_path: Optional[str] = None
         self.width: int = 0
@@ -218,8 +222,9 @@ class CameraManager:
         if not self.camera_port.is_open():
             return False
         
-        # Capture frame
-        frame_data = self.camera_port.capture_frame()
+        # Capture frame - convert to grayscale if use_case is apriltag
+        grayscale = (self.use_case == 'apriltag')
+        frame_data = self.camera_port.capture_frame(grayscale=grayscale)
         
         if frame_data:
             # Frame is already JPEG encoded from OpenCV, just use it directly

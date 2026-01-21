@@ -81,8 +81,12 @@ class OpenCVCameraAdapter(CameraPort):
         """Check if camera is open."""
         return self.cap is not None and self.cap.isOpened()
     
-    def capture_frame(self) -> Optional[bytes]:
-        """Capture a single frame and return as JPEG bytes."""
+    def capture_frame(self, grayscale: bool = False) -> Optional[bytes]:
+        """Capture a single frame and return as JPEG bytes.
+        
+        Args:
+            grayscale: If True, convert frame to grayscale before encoding
+        """
         if not self.is_open():
             return None
         
@@ -90,6 +94,12 @@ class OpenCVCameraAdapter(CameraPort):
             ret, frame = self.cap.read()
             if not ret or frame is None:
                 return None
+            
+            # Convert to grayscale if requested
+            if grayscale:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                # Convert grayscale to BGR format for JPEG encoding (same result but ensures 3 channels)
+                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
             
             # Encode as JPEG
             _, jpeg_bytes = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])

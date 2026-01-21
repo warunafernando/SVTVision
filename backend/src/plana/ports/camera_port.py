@@ -38,8 +38,11 @@ class CameraPort(ABC):
         pass
     
     @abstractmethod
-    def capture_frame(self) -> Optional[bytes]:
+    def capture_frame(self, grayscale: bool = False) -> Optional[bytes]:
         """Capture a single frame.
+        
+        Args:
+            grayscale: If True, convert frame to grayscale before encoding
         
         Returns:
             Frame data as bytes (JPEG encoded), or None if capture failed

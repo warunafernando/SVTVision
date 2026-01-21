@@ -87,6 +87,7 @@ const CameraDiscoveryPage: React.FC = () => {
   const [cameraCapabilities, setCameraCapabilities] = useState<Map<string, CameraCapabilities>>(new Map());
   const [cameraControls, setCameraControls] = useState<Map<string, CameraControl[]>>(new Map());
   const [cameraNames, setCameraNames] = useState<Map<string, { position: string; side?: string }>>(new Map());
+  const [cameraUseCases, setCameraUseCases] = useState<Map<string, string>>(new Map());
   const [editingCamera, setEditingCamera] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,13 +138,14 @@ const CameraDiscoveryPage: React.FC = () => {
   };
 
   useEffect(() => {
-    // Load camera names when cameras are loaded
-    const loadCameraNames = async () => {
+    // Load camera names and use cases when cameras are loaded
+    const loadCameraConfig = async () => {
       for (const camera of cameras) {
         try {
-          const response = await fetch(`/api/cameras/${camera.id}/name`);
-          if (response.ok) {
-            const nameConfig = await response.json();
+          // Load camera name
+          const nameResponse = await fetch(`/api/cameras/${camera.id}/name`);
+          if (nameResponse.ok) {
+            const nameConfig = await nameResponse.json();
             if (nameConfig.name) {
               setCameraNames(prev => new Map(prev).set(camera.id, {
                 position: nameConfig.position || '',
@@ -151,13 +153,21 @@ const CameraDiscoveryPage: React.FC = () => {
               }));
             }
           }
+          
+          // Load camera use case from settings
+          const settingsResponse = await fetch(`/api/cameras/${camera.id}/settings`);
+          if (settingsResponse.ok) {
+            const settingsData = await settingsResponse.json();
+            const useCase = settingsData.requested?.use_case || 'apriltag';
+            setCameraUseCases(prev => new Map(prev).set(camera.id, useCase));
+          }
         } catch (err) {
-          // Ignore errors for name loading
+          // Ignore errors for config loading
         }
       }
     };
     if (cameras.length > 0) {
-      loadCameraNames();
+      loadCameraConfig();
     }
   }, [cameras]);
 
@@ -182,6 +192,26 @@ const CameraDiscoveryPage: React.FC = () => {
       loadCameras();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save camera name');
+    }
+  };
+
+  const handleUseCaseChange = async (cameraId: string, useCase: string) => {
+    try {
+      const response = await fetch(`/api/cameras/${cameraId}/settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ use_case: useCase }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to save use case');
+      }
+      
+      setCameraUseCases(prev => new Map(prev).set(cameraId, useCase));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save use case');
     }
   };
 
@@ -229,6 +259,7 @@ const CameraDiscoveryPage: React.FC = () => {
             const controls = cameraControls.get(camera.id);
 
             const nameConfig = cameraNames.get(camera.id);
+            const useCase = cameraUseCases.get(camera.id) || 'apriltag';
             const isEditing = editingCamera === camera.id;
             
             return (
@@ -269,6 +300,25 @@ const CameraDiscoveryPage: React.FC = () => {
 
                 {isExpanded && details && (
                   <div className="camera-details">
+                    <div className="details-section">
+                      <h3>Camera Configuration</h3>
+                      <div className="details-grid">
+                        <div>
+                          <label>Use Case:</label>
+                          <select
+                            value={useCase}
+                            onChange={(e) => handleUseCaseChange(camera.id, e.target.value)}
+                            className="select"
+                            style={{ marginTop: '4px', width: '200px' }}
+                          >
+                            <option value="apriltag">AprilTag</option>
+                            <option value="perception">Perception</option>
+                            <option value="object-detection">Object Detection</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="details-section">
                       <h3>USB Information</h3>
                       {Object.keys(details.usb_info).length === 0 ? (

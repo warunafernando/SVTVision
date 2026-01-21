@@ -185,6 +185,7 @@ class WebServerAdapter:
             exposure: Optional[float] = None
             gain: Optional[float] = None
             saturation: Optional[float] = None
+            use_case: Optional[str] = None  # apriltag, perception, object-detection
         
         @self.app.get("/api/cameras/{camera_id}/settings")
         async def get_camera_settings(camera_id: str) -> Dict[str, Any]:
@@ -229,6 +230,16 @@ class WebServerAdapter:
         async def set_camera_settings(camera_id: str, request: CameraSettingsRequest) -> Dict[str, Any]:
             """Set camera settings."""
             settings = {}
+            
+            # Handle use_case (validate and save)
+            if request.use_case is not None:
+                valid_use_cases = ['apriltag', 'perception', 'object-detection']
+                if request.use_case not in valid_use_cases:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid use_case. Must be one of: {', '.join(valid_use_cases)}"
+                    )
+                settings["use_case"] = request.use_case
             
             if request.resolution:
                 # Save resolution to config
