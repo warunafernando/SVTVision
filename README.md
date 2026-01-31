@@ -1,21 +1,18 @@
 # SVTVision Vision System
 
-SVTVision is a vision system for FRC robotics with a PhotonVision-style web UI for rapid on-robot debugging.
+SVTVision is a vision system for FRC robotics with a PhotonVision-style web UI for camera discovery, streaming, AprilTag detection, and on-robot debugging.
 
-## Implementation Plan
+## Documentation
 
-See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the complete execution plan.
+- [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) — Staged execution plan (Stage 0–7+)
+- [backend/PIPELINE_MODULARITY.md](./backend/PIPELINE_MODULARITY.md) — Vision pipeline: stages, ports, how to change
+- [backend/VISION_PIPELINE_ALGORITHMS_AND_STAGES_PLAN.md](./backend/VISION_PIPELINE_ALGORITHMS_AND_STAGES_PLAN.md) — Roadmap: algorithms, stages, settings, visual editor (LabVIEW-style)
 
 ## Current Status
 
-**Stage 0 Complete**: ✅ Backend and frontend integrated.
-
-- Backend services fully implemented (AppOrchestrator, ConfigService, MessageBus, HealthService, LoggingService)
-- API endpoints: `/api/system`, `/api/debug/tree`, `/api/selftest/run`
-- Frontend fetches data from backend API
-- Debug Tree with simulated nodes visible in UI
-- Single command startup via `./start.sh`
-- Self-test endpoint returns `pass=true`
+- **Backend**: FastAPI on port 8080; camera discovery (UVC/V4L2), camera open/close, resolution/controls, AprilTag vision pipeline (preprocess → detect → overlay), WebSocket streaming by stage (raw, preprocess, detect_overlay), debug tree and top faults, config persistence.
+- **Frontend**: React/TypeScript (Vite); Cameras page (discovery, open/close, stream viewer with stage tabs, controls, detections), Settings, Self-Test, Debug Tree, Top Faults, console output (time | level | section | message).
+- **Vision pipeline**: Modular stage-based pipeline; stages run in order; output per stage available for streaming and debugging. See [PIPELINE_MODULARITY.md](./backend/PIPELINE_MODULARITY.md).
 
 ## Project Structure
 
@@ -39,7 +36,7 @@ SVTVision/
 ```bash
 cd backend
 pip install -r requirements.txt
-python3 main.py
+PYTHONPATH=src python3 main.py
 ```
 Backend runs on `http://localhost:8080`
 
@@ -79,15 +76,18 @@ Frontend runs on `http://localhost:3000` with hot reload
 
 ## Implementation Stages
 
-The project follows a staged implementation plan:
+- **Stage 0**: Repo skeleton + run loop + FE/BE separation — Complete
+- **Stage 1**: Camera discovery + deep capabilities — Complete
+- **Stage 2**: Camera open/close + raw streaming — Complete
+- **Stage 3**: Camera settings (save/apply/verify) — Complete
+- **Stage 4**: Vision pipeline + AprilTag detection — Complete
+- **Stage 5+**: Health, debug tree quality, validity, advanced features — in progress
 
-- **Stage 0**: Repo skeleton + run loop + FE/BE separation ✅ **COMPLETE**
-- **Stage 1**: Camera discovery + deep capabilities
-- **Stage 2**: Camera open/close + raw streaming
-- **Stage 3**: Camera settings (save/apply/verify)
-- **Stage 4**: Vision pipeline + AprilTag detection
-- **Stage 5**: Health + Debug Tree root-cause quality
-- **Stage 6**: Validity envelope
-- **Stage 7+**: Advanced features
+See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for full details.
 
-See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for complete details.
+## Vision Pipeline (summary)
+
+- Pipeline is **stage-based**: preprocess → detect → overlay (default).
+- Stages implement `PipelineStagePort`; pipeline runs a list of stages.
+- **Streaming**: Request by stage name (raw, preprocess, detect_overlay) via WebSocket; each stage debuggable separately.
+- **Future**: Algorithms + stages registry, stage settings in UI/config, visual pipeline editor (LabVIEW-style). See [VISION_PIPELINE_ALGORITHMS_AND_STAGES_PLAN.md](./backend/VISION_PIPELINE_ALGORITHMS_AND_STAGES_PLAN.md).
