@@ -23,7 +23,7 @@ class PreprocessAdapter(PreprocessPort):
             "morphology": False,  # Disabled - can remove tag features
             "morph_kernel_size": 3
         }
-        self.logger.info("PreprocessAdapter initialized")
+        self.logger.info("[Preprocess] PreprocessAdapter initialized")
     
     def preprocess(self, frame: np.ndarray) -> Optional[np.ndarray]:
         """Preprocess a raw frame.
@@ -80,7 +80,7 @@ class PreprocessAdapter(PreprocessPort):
             return processed
         
         except Exception as e:
-            self.logger.error(f"Error preprocessing frame: {e}")
+            self.logger.error(f"[Preprocess] Error preprocessing frame: {e}")
             return None
     
     def get_config(self) -> Dict[str, Any]:
@@ -96,7 +96,7 @@ class PreprocessAdapter(PreprocessPort):
                 if blur_size >= 0 and blur_size % 2 == 1:
                     self.config["blur_kernel_size"] = blur_size
                 else:
-                    self.logger.warning(f"Invalid blur_kernel_size: {blur_size} (must be odd >= 0)")
+                    self.logger.warning(f"[Preprocess] Invalid blur_kernel_size: {blur_size} (must be odd >= 0)")
             
             if "threshold_type" in config:
                 if config["threshold_type"] in ["adaptive", "binary"]:
@@ -123,9 +123,9 @@ class PreprocessAdapter(PreprocessPort):
                 if morph_size >= 1:
                     self.config["morph_kernel_size"] = morph_size
             
-            self.logger.info(f"Preprocess config updated: {self.config}")
+            self.logger.info(f"[Preprocess] Preprocess config updated: {self.config}")
             return True
         
         except Exception as e:
-            self.logger.error(f"Error setting preprocess config: {e}")
+            self.logger.error(f"[Preprocess] Error setting preprocess config: {e}")
             return False

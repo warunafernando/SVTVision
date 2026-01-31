@@ -29,9 +29,9 @@ class CameraConfigService:
                 with open(self.config_file, 'r') as f:
                     data = json.load(f)
                     self.camera_names = data.get("camera_names", {})
-                self.logger.info(f"Loaded camera names from {self.config_file}: {len(self.camera_names)} cameras")
+                self.logger.info(f"[CameraConfig] Loaded camera names from {self.config_file}: {len(self.camera_names)} cameras")
             except Exception as e:
-                self.logger.error(f"Failed to load camera names: {e}")
+                self.logger.error(f"[CameraConfig] Failed to load camera names: {e}")
                 self.camera_names = {}
         else:
             # Create default config file
@@ -49,9 +49,9 @@ class CameraConfigService:
             }
             with open(self.config_file, 'w') as f:
                 json.dump(data, f, indent=2)
-            self.logger.info(f"Saved camera names to {self.config_file}")
+            self.logger.info(f"[CameraConfig] Saved camera names to {self.config_file}")
         except Exception as e:
-            self.logger.error(f"Failed to save camera names: {e}")
+            self.logger.error(f"[CameraConfig] Failed to save camera names: {e}")
     
     def _get_camera_settings_file(self, camera_id: str) -> Path:
         """Get the path to a camera's settings file."""
@@ -66,10 +66,10 @@ class CameraConfigService:
             try:
                 with open(settings_file, 'r') as f:
                     settings = json.load(f)
-                self.logger.debug(f"Loaded settings for camera {camera_id} from {settings_file}")
+                self.logger.debug(f"[CameraConfig] Loaded settings for camera {camera_id} from {settings_file}")
                 return settings
             except Exception as e:
-                self.logger.error(f"Failed to load settings for camera {camera_id}: {e}")
+                self.logger.error(f"[CameraConfig] Failed to load settings for camera {camera_id}: {e}")
                 return {}
         return {}
     
@@ -79,9 +79,9 @@ class CameraConfigService:
         try:
             with open(settings_file, 'w') as f:
                 json.dump(settings, f, indent=2)
-            self.logger.debug(f"Saved settings for camera {camera_id} to {settings_file}")
+            self.logger.debug(f"[CameraConfig] Saved settings for camera {camera_id} to {settings_file}")
         except Exception as e:
-            self.logger.error(f"Failed to save settings for camera {camera_id}: {e}")
+            self.logger.error(f"[CameraConfig] Failed to save settings for camera {camera_id}: {e}")
     
     def get_camera_name(self, camera_id: str) -> Optional[str]:
         """Get custom name for a camera."""
@@ -95,7 +95,7 @@ class CameraConfigService:
         if old_id in self.camera_names and new_id not in self.camera_names:
             self.camera_names[new_id] = self.camera_names[old_id]
             self._save_config()
-            self.logger.info(f"Migrated camera config from {old_id} to {new_id}")
+            self.logger.info(f"[CameraConfig] Migrated camera config from {old_id} to {new_id}")
     
     def set_camera_name(
         self, 
@@ -126,7 +126,7 @@ class CameraConfigService:
             "side": side
         })
         self._save_config()
-        self.logger.info(f"Set camera {camera_id} name to '{name}'")
+        self.logger.info(f"[CameraConfig] Set camera {camera_id} name to '{name}'")
     
     def set_camera_resolution_fps(
         self,
@@ -154,7 +154,7 @@ class CameraConfigService:
                 "fps": fps
             }
         })
-        self.logger.info(f"Set camera {camera_id} resolution to {width}x{height} @ {fps}fps ({format})")
+        self.logger.info(f"[CameraConfig] Set camera {camera_id} resolution to {width}x{height} @ {fps}fps ({format})")
     
     def get_camera_resolution_fps(self, camera_id: str) -> Optional[Dict]:
         """Get camera resolution and FPS configuration."""
@@ -203,4 +203,4 @@ class CameraConfigService:
         
         # Save merged settings
         self._save_camera_settings(camera_id, existing_settings)
-        self.logger.info(f"Saved settings for camera {camera_id}: {list(settings.keys())}")
+        self.logger.info(f"[CameraConfig] Saved settings for camera {camera_id}: {list(settings.keys())}")

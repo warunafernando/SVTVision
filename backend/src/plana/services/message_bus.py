@@ -15,20 +15,20 @@ class MessageBus:
     def subscribe(self, topic: str, callback: Callable):
         """Subscribe to a topic."""
         self.subscribers[topic].append(callback)
-        self.logger.debug(f"Subscribed to topic: {topic}")
+        self.logger.debug(f"[MessageBus] Subscribed to topic: {topic}")
     
     def unsubscribe(self, topic: str, callback: Callable):
         """Unsubscribe from a topic."""
         if callback in self.subscribers[topic]:
             self.subscribers[topic].remove(callback)
-            self.logger.debug(f"Unsubscribed from topic: {topic}")
+            self.logger.debug(f"[MessageBus] Unsubscribed from topic: {topic}")
     
     def publish(self, topic: str, message: Any):
         """Publish message to a topic."""
         callbacks = self.subscribers.get(topic, [])
-        self.logger.debug(f"Publishing to topic: {topic} ({len(callbacks)} subscribers)")
+        self.logger.debug(f"[MessageBus] Publishing to topic: {topic} ({len(callbacks)} subscribers)")
         for callback in callbacks:
             try:
                 callback(message)
             except Exception as e:
-                self.logger.error(f"Error in callback for topic {topic}: {e}")
+                self.logger.error(f"[MessageBus] Error in callback for topic {topic}: {e}")

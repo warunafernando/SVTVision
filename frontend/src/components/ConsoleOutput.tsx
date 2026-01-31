@@ -57,12 +57,13 @@ const ConsoleOutput: React.FC = () => {
         typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
       ).join(' ');
       
-      // Extract section from message (look for section markers like [SECTION], 📥, ✅, etc.)
+      // Extract section from message (backend [Section] prefix or [SETTINGS]/[CONTROLS], etc.)
       let section: string | undefined = undefined;
       const msgLower = messageStr.toLowerCase();
-      
-      // Check for section markers first
-      if (messageStr.includes('[SETTINGS]') || messageStr.includes('[CONTROLS]')) {
+      const bracketMatch = messageStr.match(/^\[([^\]]+)\]\s*/);
+      if (bracketMatch) {
+        section = bracketMatch[1]; // e.g. App, Camera, Stream, Pipeline, Config
+      } else if (messageStr.includes('[SETTINGS]') || messageStr.includes('[CONTROLS]')) {
         if (messageStr.includes('[SETTINGS]')) {
           section = 'settings';
         } else if (messageStr.includes('[CONTROLS]')) {
@@ -248,10 +249,11 @@ const ConsoleOutput: React.FC = () => {
         ) : (
           visibleMessages.map(msg => (
             <div key={msg.id} className={`console-line console-${msg.level}`}>
-              <span className="console-time">
-                {msg.timestamp.toLocaleTimeString()}
+              <span className="console-time" title={msg.timestamp.toISOString()}>
+                {msg.timestamp.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </span>
-              <span className="console-level">[{msg.level.toUpperCase()}]</span>
+              <span className="console-level">{msg.level.toUpperCase()}</span>
+              <span className="console-section">{msg.section || '—'}</span>
               <span className="console-message">{msg.message}</span>
             </div>
           ))

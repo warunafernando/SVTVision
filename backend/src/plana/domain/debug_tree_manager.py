@@ -1,6 +1,6 @@
 """Debug tree manager for maintaining the debug tree state."""
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from .debug_tree import DebugTreeNode, NodeStatus
 from ..services.health_service import HealthService
 from ..services.logging_service import LoggingService
@@ -204,7 +204,7 @@ class DebugTreeManager:
                 elif isinstance(camera_list, dict):
                     detected_cameras = camera_list.get("cameras", [])
             except Exception as e:
-                self.logger.warning(f"Failed to get camera list for debug tree: {e}")
+                self.logger.warning(f"[DebugTree] Failed to get camera list for debug tree: {e}")
         
         # Get camera managers for open cameras
         camera_managers = {}
@@ -453,6 +453,33 @@ class DebugTreeManager:
                 )
                 vision_pipeline_node.children.append(pipeline_camera_node)
     
+    def get_top_faults(self, max_faults: int = 5) -> List[Dict[str, Any]]:
+        """Collect nodes with status != OK from the tree, ordered by severity (ERROR > STALE > WARN)."""
+        root = self.get_tree()
+        faults: List[Dict[str, Any]] = []
+
+        def severity_order(status: NodeStatus) -> int:
+            order = {NodeStatus.ERROR: 3, NodeStatus.STALE: 2, NodeStatus.WARN: 1, NodeStatus.OK: 0}
+            return order.get(status, 0)
+
+        def walk(node: DebugTreeNode, path_parts: List[str]) -> None:
+            path = " > ".join(path_parts) if path_parts else node.name
+            if node.status != NodeStatus.OK:
+                faults.append({
+                    "path": path,
+                    "node_id": node.id,
+                    "name": node.name,
+                    "status": node.status.value,
+                    "reason": node.reason,
+                    "metrics": node.metrics or {},
+                })
+            for child in node.children:
+                walk(child, path_parts + [child.name])
+
+        walk(root, [root.name])
+        faults.sort(key=lambda f: severity_order(NodeStatus(f["status"])), reverse=True)
+        return faults[:max_faults]
+
     def get_tree_dict(self) -> dict:
         """Get debug tree as dictionary."""
         return self.get_tree().to_dict()

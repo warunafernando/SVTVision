@@ -60,12 +60,12 @@ class CameraDiscovery:
             self.message_bus.publish("camera_list_updated", {
                 "cameras": self._cameras
             })
-            self.logger.info(f"Camera list updated: {len(self._cameras)} cameras")
+            self.logger.info(f"[Discovery] Camera list updated: {len(self._cameras)} cameras")
     
     def _update_cameras(self):
         """Update internal camera list."""
         try:
             self._cameras = self.discovery_port.discover_cameras()
         except Exception as e:
-            self.logger.error(f"Error updating camera list: {e}")
+            self.logger.error(f"[Discovery] Error updating camera list: {e}")
             self._cameras = []

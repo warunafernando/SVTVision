@@ -22,9 +22,9 @@ class ConfigService:
             try:
                 with open(config_file, 'r') as f:
                     self.config = json.load(f)
-                self.logger.info(f"Loaded config from {config_file}")
+                self.logger.info(f"[Config] Loaded config from {config_file}")
             except Exception as e:
-                self.logger.error(f"Failed to load config: {e}")
+                self.logger.error(f"[Config] Failed to load config: {e}")
                 self.config = {}
         else:
             # Default config
@@ -43,7 +43,7 @@ class ConfigService:
             with open(config_file, 'w') as f:
                 json.dump(self.config, f, indent=2)
         except Exception as e:
-            self.logger.error(f"Failed to save config: {e}")
+            self.logger.error(f"[Config] Failed to save config: {e}")
     
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value."""

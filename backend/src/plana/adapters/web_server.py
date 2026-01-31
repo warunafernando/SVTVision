@@ -1,6 +1,7 @@
 """Web server adapter for SVTVision."""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -46,6 +47,13 @@ class WebServerAdapter:
         self.frontend_dist_path = frontend_dist_path
         
         self.app = FastAPI(title="SVTVision API")
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
         self._setup_routes()
     
     def _setup_routes(self):
@@ -66,6 +74,12 @@ class WebServerAdapter:
         async def get_debug_tree() -> Dict[str, Any]:
             """Get debug tree."""
             return self.debug_tree_manager.get_tree_dict()
+
+        @self.app.get("/api/debug/top-faults")
+        async def get_top_faults(max_faults: int = 5) -> Dict[str, Any]:
+            """Get top faults (non-OK nodes) from debug tree, ordered by severity."""
+            faults = self.debug_tree_manager.get_top_faults(max_faults=max_faults)
+            return {"faults": faults}
         
         @self.app.get("/api/selftest/run")
         async def run_selftest(test: str) -> Dict[str, Any]:
@@ -227,7 +241,7 @@ class WebServerAdapter:
                     try:
                         actual_settings = manager.camera_port.get_actual_settings() or {}
                     except Exception as e:
-                        self.logger.warning(f"Failed to get actual settings: {e}")
+                        self.logger.warning(f"[Stream] Failed to get actual settings: {e}")
                         actual_settings = {}
             
             # Verify resolution match if both exist
@@ -247,6 +261,31 @@ class WebServerAdapter:
                 "requested": requested_settings,
                 "actual": actual_settings,
                 "verification": verification
+            }
+
+        @self.app.get("/api/cameras/{camera_id}/detector-config")
+        async def get_detector_config(camera_id: str) -> Dict[str, Any]:
+            """Get detector config for a camera (use_case, etc.). Returns empty if not set."""
+            config = self.camera_config_service.get_camera_config(camera_id) or {}
+            return {
+                "camera_id": camera_id,
+                "use_case": config.get("use_case", "apriltag"),
+                "family": "tag36h11",
+            }
+
+        @self.app.get("/api/cameras/{camera_id}/preprocessing-config")
+        async def get_preprocessing_config(camera_id: str) -> Dict[str, Any]:
+            """Get preprocessing config for a camera. Returns defaults if not set."""
+            config = self.camera_config_service.get_camera_config(camera_id) or {}
+            preprocessing = config.get("preprocessing", {})
+            return {
+                "camera_id": camera_id,
+                "preprocessing": preprocessing if preprocessing else {
+                    "blur_kernel_size": 3,
+                    "adaptive_block_size": 15,
+                    "adaptive_c": 3,
+                    "morphology": False,
+                },
             }
         
         @self.app.post("/api/cameras/{camera_id}/settings")
@@ -287,7 +326,7 @@ class WebServerAdapter:
                         res.get("format", "YUYV")
                     )
                     if not success:
-                        self.logger.warning(f"Failed to apply settings to open camera {camera_id}")
+                        self.logger.warning(f"[Stream] Failed to apply settings to open camera {camera_id}")
             
             # Save other settings
             if request.exposure is not None:
@@ -332,13 +371,23 @@ class WebServerAdapter:
                 raise HTTPException(status_code=400, detail="Camera device path not available")
             
             # Open camera
-            success = self.camera_service.open_camera(
-                camera_id,
-                device_path
-            )
+            try:
+                success = self.camera_service.open_camera(
+                    camera_id,
+                    device_path
+                )
+            except Exception as e:
+                self.logger.error(f"[Stream] Open camera {camera_id} exception: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to open camera: {e}. Ensure your user is in the 'video' group (run: sudo usermod -aG video $USER, then log out and back in)."
+                )
             
             if not success:
-                raise HTTPException(status_code=500, detail="Failed to open camera")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to open camera. Ensure your user is in the 'video' group (run: sudo usermod -aG video $USER, then log out and back in), and no other app is using the device."
+                )
             
             return {
                 "camera_id": camera_id,
@@ -496,9 +545,9 @@ class WebServerAdapter:
                             last_frame_data = frame_data
                             frames_sent += 1
                             if frames_sent % 100 == 0:
-                                self.logger.info(f"Stream {camera_id} ({stage}): Sent {frames_sent} frames")
+                                self.logger.info(f"[Stream] {camera_id} ({stage}): Sent {frames_sent} frames")
                         except Exception as e:
-                            self.logger.error(f"Error sending frame for {camera_id}: {e}")
+                            self.logger.error(f"[Stream] Error sending frame for {camera_id}: {e}")
                             break
                     
                     # Match the camera FPS for streaming rate
@@ -508,9 +557,9 @@ class WebServerAdapter:
                     await asyncio.sleep(frame_interval)
                     
             except WebSocketDisconnect:
-                self.logger.info(f"WebSocket disconnected for camera {camera_id}")
+                self.logger.info(f"[Stream] WebSocket disconnected for camera {camera_id}")
             except Exception as e:
-                self.logger.error(f"Error in video stream for {camera_id}: {e}")
+                self.logger.error(f"[Stream] Error in video stream for {camera_id}: {e}")
                 try:
                     await websocket.close(code=1011, reason="Internal error")
                 except:

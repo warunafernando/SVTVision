@@ -14,7 +14,7 @@ class SelfTestRunner:
     
     def run_test(self, test_name: str) -> Dict[str, Any]:
         """Run a self-test."""
-        self.logger.info(f"Running self-test: {test_name}")
+        self.logger.info(f"[SelfTest] Running self-test: {test_name}")
         
         if test_name == "smoke":
             return self._run_smoke_test()

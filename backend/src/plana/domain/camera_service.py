@@ -35,7 +35,7 @@ class CameraService:
         self.vision_pipeline_running = False
         self.vision_pipeline_thread_lock = threading.Lock()
         
-        self.logger.info("CameraService initialized with separate capture and vision pipeline threads")
+        self.logger.info("[CameraService] Initialized with separate capture and vision pipeline threads")
     
     def open_camera(
         self,
@@ -54,7 +54,7 @@ class CameraService:
         if camera_id in self.camera_managers:
             manager = self.camera_managers[camera_id]
             if manager.is_open():
-                self.logger.warning(f"Camera {camera_id} already open")
+                self.logger.warning(f"[CameraService] Camera {camera_id} already open")
                 return True
         
         # Get settings from config if not provided
@@ -90,7 +90,7 @@ class CameraService:
             preprocessing_config = camera_config.get('preprocessing', {})
             if preprocessing_config:
                 preprocessor.set_config(preprocessing_config)
-                self.logger.info(f"Loaded camera-specific preprocessing config for {camera_id}: {preprocessing_config}")
+                self.logger.info(f"[CameraService] Loaded camera-specific preprocessing config for {camera_id}: {preprocessing_config}")
             else:
                 # Default optimized settings for stable detection
                 default_preprocessing = {
@@ -103,7 +103,7 @@ class CameraService:
             
             tag_detector = AprilTagDetectorAdapter(self.logger, family="tag36h11")
             vision_pipeline = VisionPipeline(preprocessor, tag_detector, self.logger)
-            self.logger.info(f"Created vision pipeline for camera {camera_id}")
+            self.logger.info(f"[CameraService] Created vision pipeline for camera {camera_id}")
         
         # Create manager with use_case and vision_pipeline
         manager = CameraManager(
@@ -115,7 +115,12 @@ class CameraService:
         )
         
         # Open camera
-        if not manager.open(device_path, width, height, fps, format):
+        try:
+            if not manager.open(device_path, width, height, fps, format):
+                self.logger.error(f"[CameraService] Camera {camera_id} open failed (device_path={device_path})")
+                return False
+        except Exception as e:
+            self.logger.error(f"[CameraService] Camera {camera_id} open error: {e}", exc_info=True)
             return False
         
         # Store manager
@@ -125,7 +130,7 @@ class CameraService:
         verification = manager.verify_settings(width, height, fps, format)
         if not verification.get("verified"):
             self.logger.warning(
-                f"Camera {camera_id} opened but settings mismatch: "
+                f"[CameraService] Camera {camera_id} opened but settings mismatch: "
                 f"expected {width}x{height}@{fps}fps, got {verification.get('actual', {})}"
             )
         
@@ -135,7 +140,7 @@ class CameraService:
         # Start vision pipeline thread if not already running
         self._ensure_vision_pipeline_thread_running()
         
-        self.logger.info(f"Camera {camera_id} opened successfully")
+        self.logger.info(f"[CameraService] Camera {camera_id} opened successfully")
         return True
     
     def close_camera(self, camera_id: str) -> bool:
@@ -159,7 +164,7 @@ class CameraService:
         if cameras_with_pipelines == 0:
             self._stop_vision_pipeline_thread()
         
-        self.logger.info(f"Camera {camera_id} closed")
+        self.logger.info(f"[CameraService] Camera {camera_id} closed")
         return True
     
     def is_camera_open(self, camera_id: str) -> bool:
@@ -230,7 +235,7 @@ class CameraService:
                 self.capture_running = True
                 self.capture_thread = threading.Thread(target=self._single_capture_loop, daemon=True)
                 self.capture_thread.start()
-                self.logger.info("Single capture thread started for all cameras")
+                self.logger.info("[CameraService] Single capture thread started for all cameras")
     
     def _stop_capture_thread(self) -> None:
         """Stop the single capture thread."""
@@ -239,7 +244,7 @@ class CameraService:
             if self.capture_thread:
                 self.capture_thread.join(timeout=2.0)
                 self.capture_thread = None
-            self.logger.info("Single capture thread stopped")
+            self.logger.info("[CameraService] Single capture thread stopped")
     
     def _single_capture_loop(self) -> None:
         """Single capture loop that iterates over all open cameras.
@@ -247,7 +252,7 @@ class CameraService:
         This is the only capture thread - it loops through all cameras
         and captures frames for each one into their respective queues.
         """
-        self.logger.info("Single capture loop started - processing all cameras")
+        self.logger.info("[CameraService] Single capture loop started - processing all cameras")
         
         iteration_count = 0
         
@@ -328,9 +333,9 @@ class CameraService:
             # Log status every 1000 iterations (~33 seconds at 30 iter/sec)
             if iteration_count % 1000 == 0:
                 active_cameras = sum(1 for _, m in cameras_to_process if m.is_open())
-                self.logger.info(f"Capture loop: {iteration_count} iterations, {active_cameras} active cameras")
+                self.logger.info(f"[CameraService] Capture loop: {iteration_count} iterations, {active_cameras} active cameras")
         
-        self.logger.info("Single capture loop stopped")
+        self.logger.info("[CameraService] Single capture loop stopped")
     
     def _ensure_vision_pipeline_thread_running(self) -> None:
         """Ensure the vision pipeline processing thread is running."""
@@ -347,7 +352,7 @@ class CameraService:
                         target=self._vision_pipeline_loop, daemon=True
                     )
                     self.vision_pipeline_thread.start()
-                    self.logger.info("Vision pipeline processing thread started")
+                    self.logger.info("[CameraService] Vision pipeline processing thread started")
     
     def _stop_vision_pipeline_thread(self) -> None:
         """Stop the vision pipeline processing thread."""
@@ -364,7 +369,7 @@ class CameraService:
         This thread processes frames from raw queues through vision pipelines.
         Runs continuously while cameras with pipelines are open.
         """
-        self.logger.info("Vision pipeline processing loop started")
+        self.logger.info("[CameraService] Vision pipeline processing loop started")
         
         while self.vision_pipeline_running:
             processed_any = False
@@ -396,10 +401,10 @@ class CameraService:
                     if manager.process_vision_pipeline():
                         processed_any = True
                 except Exception as e:
-                    self.logger.error(f"Error processing vision pipeline for camera {camera_id}: {e}")
+                    self.logger.error(f"[CameraService] Error processing vision pipeline for camera {camera_id}: {e}")
             
             # Small sleep if we didn't process anything (all queues empty)
             if not processed_any:
                 time.sleep(0.01)  # 10ms sleep when queues are empty
         
-        self.logger.info("Vision pipeline processing loop stopped")
+        self.logger.info("[CameraService] Vision pipeline processing loop stopped")

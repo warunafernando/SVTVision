@@ -51,7 +51,7 @@ class CameraManager:
         self.last_frame_time = 0.0
         self.metrics_lock = threading.Lock()
         
-        self.logger.info("CameraManager initialized")
+        self.logger.info("[CameraManager] Initialized")
     
     def open(
         self,
@@ -63,7 +63,7 @@ class CameraManager:
     ) -> bool:
         """Open camera and start capture thread."""
         if self.camera_port.is_open():
-            self.logger.warning("Camera already open")
+            self.logger.warning("[CameraManager] Camera already open")
             return False
         
         if not self.camera_port.open(device_path, width, height, fps, format):
@@ -91,7 +91,7 @@ class CameraManager:
         # Note: Capture is now handled by a single thread in CameraService
         # No need to start individual capture threads here
         
-        self.logger.info(f"Camera opened: {device_path}")
+        self.logger.info(f"[CameraManager] Camera opened: {device_path}")
         return True
     
     def close(self) -> None:
@@ -107,7 +107,7 @@ class CameraManager:
             self.raw_frame_queue.clear()
         
         self.device_path = None
-        self.logger.info("Camera closed")
+        self.logger.info("[CameraManager] Camera closed")
     
     def is_open(self) -> bool:
         """Check if camera is open."""
@@ -272,7 +272,7 @@ class CameraManager:
             
             return True
         except Exception as e:
-            self.logger.error(f"Error enqueueing raw frame: {e}")
+            self.logger.error(f"[CameraManager] Error enqueueing raw frame: {e}")
             with self.metrics_lock:
                 self.frames_dropped += 1
             return False
@@ -322,7 +322,7 @@ class CameraManager:
             return True
         
         except Exception as e:
-            self.logger.error(f"Error processing vision pipeline: {e}")
+            self.logger.error(f"[CameraManager] Error processing vision pipeline: {e}")
             with self.metrics_lock:
                 self.frames_dropped += 1
             return False
@@ -389,7 +389,7 @@ class CameraManager:
                     return False
         
         except Exception as e:
-            self.logger.error(f"Error processing frame: {e}")
+            self.logger.error(f"[CameraManager] Error processing frame: {e}")
             with self.metrics_lock:
                 self.frames_dropped += 1
             return False
@@ -476,7 +476,7 @@ class CameraManager:
                     return False
         
         except Exception as e:
-            self.logger.error(f"Error capturing frame: {e}")
+            self.logger.error(f"[CameraManager] Error capturing frame: {e}")
             with self.metrics_lock:
                 self.frames_dropped += 1
             return False

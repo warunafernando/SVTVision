@@ -127,22 +127,32 @@
 
 .console-line {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   padding: 2px 0;
   line-height: 1.4;
   word-break: break-word;
+  align-items: flex-start;
 }
 
 .console-time {
   color: #858585;
   flex-shrink: 0;
-  min-width: 80px;
+  min-width: 72px;
+  font-size: 11px;
 }
 
 .console-level {
   flex-shrink: 0;
-  min-width: 60px;
+  min-width: 44px;
   font-weight: 600;
+  font-size: 11px;
+}
+
+.console-section {
+  flex-shrink: 0;
+  min-width: 72px;
+  color: #9cdcfe;
+  font-size: 11px;
 }
 
 .console-line.console-error .console-level {

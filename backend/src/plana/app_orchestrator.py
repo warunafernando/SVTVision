@@ -104,7 +104,7 @@ class AppOrchestrator:
         """Auto-start cameras that have saved resolution/FPS settings."""
         cameras = self.camera_discovery.get_camera_list()
         if not cameras:
-            self.logger.info("No cameras found for auto-start")
+            self.logger.info("[App] No cameras found for auto-start")
             return
         
         started_count = 0
@@ -113,7 +113,7 @@ class AppOrchestrator:
             device_path = camera.get("device_path")
             
             if not device_path:
-                self.logger.warning(f"Camera {camera_id} has no device_path, skipping auto-start")
+                self.logger.warning(f"[App] Camera {camera_id} has no device_path, skipping auto-start")
                 continue
             
             # Check if camera has saved settings
@@ -133,17 +133,17 @@ class AppOrchestrator:
                         )
                         if success:
                             started_count += 1
-                            self.logger.info(f"Auto-started camera {camera_id} with settings {res.get('width')}x{res.get('height')}@{res.get('fps')}fps")
+                            self.logger.info(f"[App] Auto-started camera {camera_id} with settings {res.get('width')}x{res.get('height')}@{res.get('fps')}fps")
                         else:
-                            self.logger.warning(f"Failed to auto-start camera {camera_id}")
+                            self.logger.warning(f"[App] Failed to auto-start camera {camera_id}")
                     except Exception as e:
-                        self.logger.error(f"Error auto-starting camera {camera_id}: {e}")
+                        self.logger.error(f"[App] Error auto-starting camera {camera_id}: {e}")
                 else:
-                    self.logger.debug(f"Camera {camera_id} has incomplete resolution settings, skipping auto-start")
+                    self.logger.debug(f"[App] Camera {camera_id} has incomplete resolution settings, skipping auto-start")
             else:
-                self.logger.debug(f"Camera {camera_id} has no saved settings, skipping auto-start")
+                self.logger.debug(f"[App] Camera {camera_id} has no saved settings, skipping auto-start")
         
-        self.logger.info(f"Auto-started {started_count} camera(s) out of {len(cameras)} discovered")
+        self.logger.info(f"[App] Auto-started {started_count} camera(s) out of {len(cameras)} discovered")
         
         # Update health status
         if started_count > 0:
@@ -161,19 +161,19 @@ class AppOrchestrator:
                     time.sleep(3)  # Check every 3 seconds
                     self.camera_discovery.refresh()
                 except Exception as e:
-                    self.logger.error(f"Error in hot-plug monitoring: {e}")
+                    self.logger.error(f"[App] Error in hot-plug monitoring: {e}")
         
         thread = threading.Thread(target=monitor, daemon=True)
         thread.start()
-        self.logger.info("Hot-plug monitoring started (3 second interval)")
+        self.logger.info("[App] Hot-plug monitoring started (3 second interval)")
     
     def start(self):
         """Start the application."""
-        self.logger.info("Starting SVTVision application...")
-        self.logger.info(f"App: {self.config_service.get('app_name')}")
-        self.logger.info(f"Build: {self.config_service.get('build_id')}")
+        self.logger.info("[App] Starting SVTVision application...")
+        self.logger.info(f"[App] App: {self.config_service.get('app_name')}")
+        self.logger.info(f"[App] Build: {self.config_service.get('build_id')}")
         return self.web_server.get_app()
     
     def shutdown(self):
         """Shutdown the application."""
-        self.logger.info("Shutting down SVTVision application...")
+        self.logger.info("[App] Shutting down SVTVision application...")

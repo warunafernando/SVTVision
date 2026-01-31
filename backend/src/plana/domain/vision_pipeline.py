@@ -65,7 +65,7 @@ class VisionPipeline:
         self.frames_with_detections = 0
         self.total_detections_all_tags = 0
         
-        self.logger.info("VisionPipeline initialized")
+        self.logger.info("[Pipeline] VisionPipeline initialized")
     
     def process_frame(self, raw_frame: np.ndarray) -> Dict[str, Any]:
         """Process a raw frame through the pipeline.
@@ -96,7 +96,7 @@ class VisionPipeline:
             # Stage 2: Preprocess (works on grayscale)
             preprocessed = self.preprocessor.preprocess(gray_frame)
             if preprocessed is None:
-                self.logger.warning("Preprocessing failed, skipping detect stage")
+                self.logger.warning("[Pipeline] Preprocessing failed, skipping detect stage")
                 return {
                     "raw": raw_stage,
                     "preprocess": None,
@@ -136,7 +136,7 @@ class VisionPipeline:
                     stats_summary = {tag_id: stats["count"] for tag_id, stats in self.detection_stats.items()}
                     detection_rate = (self.frames_with_detections / self.frames_processed) * 100
                     self.logger.info(
-                        f"Detection stats: {self.frames_processed} frames processed, "
+                        f"[Pipeline] Detection stats: {self.frames_processed} frames processed, "
                         f"{detection_rate:.1f}% with detections, "
                         f"Tags detected: {stats_summary}, "
                         f"Latest: {[d.tag_id for d in detections]}"
@@ -157,7 +157,7 @@ class VisionPipeline:
             }
         
         except Exception as e:
-            self.logger.error(f"Error processing frame in vision pipeline: {e}")
+            self.logger.error(f"[Pipeline] Error processing frame in vision pipeline: {e}")
             return {
                 "raw": None,
                 "preprocess": None,

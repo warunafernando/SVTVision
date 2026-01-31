@@ -29,9 +29,9 @@ class AprilTagDetectorAdapter(TagDetectorPort):
                 quad_contours=True  # Use quad contours
             )
             self.detector = apriltag.Detector(options)
-            self.logger.info(f"AprilTagDetectorAdapter initialized with family {family}, optimized settings")
+            self.logger.info(f"[AprilTag] AprilTagDetectorAdapter initialized with family {family}, optimized settings")
         except Exception as e:
-            self.logger.error(f"Failed to initialize AprilTag detector: {e}")
+            self.logger.error(f"[AprilTag] Failed to initialize AprilTag detector: {e}")
             self.detector = None
     
     def detect(self, frame: np.ndarray) -> List[TagDetection]:
@@ -86,7 +86,7 @@ class AprilTagDetectorAdapter(TagDetectorPort):
             return detections
         
         except Exception as e:
-            self.logger.error(f"Error detecting AprilTags: {e}")
+            self.logger.error(f"[AprilTag] Error detecting AprilTags: {e}")
             return []
     
     def draw_overlay(self, frame: np.ndarray, detections: List[TagDetection]) -> np.ndarray:
@@ -130,5 +130,5 @@ class AprilTagDetectorAdapter(TagDetectorPort):
             return overlay
         
         except Exception as e:
-            self.logger.error(f"Error drawing overlay: {e}")
+            self.logger.error(f"[AprilTag] Error drawing overlay: {e}")
             return frame

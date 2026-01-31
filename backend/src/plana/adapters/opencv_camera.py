@@ -26,12 +26,15 @@ class OpenCVCameraAdapter(CameraPort):
             if device_path.startswith('/dev/video'):
                 device_index = int(device_path.replace('/dev/video', ''))
             else:
-                self.logger.error(f"Invalid device path: {device_path}")
+                self.logger.error(f"[Camera] Invalid device path: {device_path}")
                 return False
             
             self.cap = cv2.VideoCapture(device_index)
             if not self.cap.isOpened():
-                self.logger.error(f"Failed to open camera {device_path}")
+                self.logger.error(
+                    f"[Camera] Failed to open camera {device_path}. "
+                    "Check: 1) User in 'video' group (run: groups). 2) No other app using the device. 3) Device exists (ls -la /dev/video0)."
+                )
                 return False
             
             # Set camera properties
@@ -57,13 +60,13 @@ class OpenCVCameraAdapter(CameraPort):
             self.format = format
             
             self.logger.info(
-                f"Opened camera {device_path}: "
+                f"[Camera] Opened camera {device_path}: "
                 f"{actual_width}x{actual_height} @ {actual_fps:.2f}fps ({format})"
             )
             return True
             
         except Exception as e:
-            self.logger.error(f"Error opening camera {device_path}: {e}")
+            self.logger.error(f"[Camera] Error opening camera {device_path}: {e}")
             if self.cap:
                 self.cap.release()
                 self.cap = None
@@ -75,7 +78,7 @@ class OpenCVCameraAdapter(CameraPort):
             self.cap.release()
             self.cap = None
             self.device_path = None
-            self.logger.info(f"Closed camera")
+            self.logger.info("[Camera] Closed camera")
     
     def is_open(self) -> bool:
         """Check if camera is open."""
@@ -109,7 +112,7 @@ class OpenCVCameraAdapter(CameraPort):
             return jpeg_bytes.tobytes()
             
         except Exception as e:
-            self.logger.debug(f"Error capturing frame: {e}")
+            self.logger.debug(f"[Camera] Error capturing frame: {e}")
             return None
     
     def capture_frame_raw(self) -> Optional[np.ndarray]:
@@ -128,7 +131,7 @@ class OpenCVCameraAdapter(CameraPort):
             return frame
             
         except Exception as e:
-            self.logger.debug(f"Error capturing raw frame: {e}")
+            self.logger.debug(f"[Camera] Error capturing raw frame: {e}")
             return None
     
     def get_actual_settings(self) -> dict:
@@ -179,7 +182,7 @@ class OpenCVCameraAdapter(CameraPort):
             return True
             
         except Exception as e:
-            self.logger.error(f"Error applying settings: {e}")
+            self.logger.error(f"[Camera] Error applying settings: {e}")
             return False
     
     def apply_control_settings(self, exposure: Optional[int] = None, gain: Optional[float] = None, saturation: Optional[float] = None) -> bool:
@@ -204,17 +207,17 @@ class OpenCVCameraAdapter(CameraPort):
                 # Map 0-10 to 0-100
                 cv_gain = gain * 10
                 self.cap.set(cv2.CAP_PROP_GAIN, cv_gain)
-                self.logger.debug(f"Set gain to {gain} (cv2 value: {cv_gain})")
+                self.logger.debug(f"[Camera] Set gain to {gain} (cv2 value: {cv_gain})")
             
             if saturation is not None:
                 # OpenCV saturation is typically 0-255
                 # Map 0-2 to 0-255
                 cv_saturation = saturation * 127.5
                 self.cap.set(cv2.CAP_PROP_SATURATION, cv_saturation)
-                self.logger.debug(f"Set saturation to {saturation} (cv2 value: {cv_saturation})")
+                self.logger.debug(f"[Camera] Set saturation to {saturation} (cv2 value: {cv_saturation})")
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Error applying control settings: {e}")
+            self.logger.error(f"[Camera] Error applying control settings: {e}")
             return False

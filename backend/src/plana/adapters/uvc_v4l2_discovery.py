@@ -63,11 +63,11 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                             physical_cameras[current_camera]["all_devices"].append(device_path)
                     else:
                         # Skip non-USB cameras (platform devices)
-                        self.logger.debug(f"Skipping non-USB camera: {device_path}")
+                        self.logger.debug(f"[Discovery] Skipping non-USB camera: {device_path}")
                         current_camera = None  # Reset so we don't associate next device with this camera
         
         except Exception as e:
-            self.logger.warning(f"Error using v4l2-ctl --list-devices: {e}")
+            self.logger.warning(f"[Discovery] Error using v4l2-ctl --list-devices: {e}")
             # Fallback to original method
             return self._discover_cameras_fallback()
         
@@ -109,7 +109,7 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                             "available": True
                         })
             except Exception as e:
-                self.logger.warning(f"Error discovering camera {video_dev}: {e}")
+                self.logger.warning(f"[Discovery] Error discovering camera {video_dev}: {e}")
         
         return cameras
     
@@ -240,7 +240,7 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                     if match:
                         return match.group(1).strip()
         except Exception as e:
-            self.logger.debug(f"Error getting device name: {e}")
+            self.logger.debug(f"[Discovery] Error getting device name: {e}")
         
         return os.path.basename(device_path)
     
@@ -335,7 +335,7 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                         pass
             
         except Exception as e:
-            self.logger.debug(f"Error getting USB info: {e}")
+            self.logger.debug(f"[Discovery] Error getting USB info: {e}")
         
         return info
     
@@ -370,7 +370,7 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                         pass
         
         except Exception as e:
-            self.logger.debug(f"Error getting kernel info: {e}")
+            self.logger.debug(f"[Discovery] Error getting kernel info: {e}")
         
         return info
     
@@ -410,7 +410,7 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                 pci_path = pci_path.parent
         
         except Exception as e:
-            self.logger.debug(f"Error getting host controller: {e}")
+            self.logger.debug(f"[Discovery] Error getting host controller: {e}")
         
         return info
     
@@ -430,7 +430,7 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                 if match:
                     formats.append(match.group(1))
         except Exception as e:
-            self.logger.debug(f"Error getting formats: {e}")
+            self.logger.debug(f"[Discovery] Error getting formats: {e}")
         
         return formats
     
@@ -480,7 +480,7 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                             current_resolution["fps"].append(fps_value)
         
         except Exception as e:
-            self.logger.debug(f"Error getting resolutions: {e}")
+            self.logger.debug(f"[Discovery] Error getting resolutions: {e}")
         
         # Convert to expected format
         result_list = []
@@ -513,7 +513,7 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                             "max_fps": max(res["fps"])
                         })
         except Exception as e:
-            self.logger.debug(f"Error getting FPS ranges: {e}")
+            self.logger.debug(f"[Discovery] Error getting FPS ranges: {e}")
         
         return fps_ranges[:50]  # Limit results
     
@@ -569,7 +569,7 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                     
                     controls.append(control)
         except Exception as e:
-            self.logger.debug(f"Error getting controls: {e}")
+            self.logger.debug(f"[Discovery] Error getting controls: {e}")
         
         return controls
     
@@ -584,7 +584,7 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                 real_path = sys_link.resolve()
                 return real_path
         except Exception as e:
-            self.logger.debug(f"Error getting sys path: {e}")
+            self.logger.debug(f"[Discovery] Error getting sys path: {e}")
         
         return None
     
@@ -620,6 +620,6 @@ class UVCV4L2DiscoveryAdapter(CameraDiscoveryPort):
                 if current == Path('/'):
                     break
         except Exception as e:
-            self.logger.debug(f"Error finding USB device path: {e}")
+            self.logger.debug(f"[Discovery] Error finding USB device path: {e}")
         
         return None
