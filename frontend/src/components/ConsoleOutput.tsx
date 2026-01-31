@@ -244,6 +244,14 @@ const ConsoleOutput: React.FC = () => {
         </div>
       </div>
       <div className="console-content">
+        {visibleMessages.length > 0 && (
+          <div className="console-line console-header-row">
+            <span className="console-time">TIME</span>
+            <span className="console-level">LEVEL</span>
+            <span className="console-section">SECTION</span>
+            <span className="console-message">MESSAGE</span>
+          </div>
+        )}
         {visibleMessages.length === 0 ? (
           <div className="console-empty">No messages</div>
         ) : (

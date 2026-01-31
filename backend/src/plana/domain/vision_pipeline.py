@@ -1,213 +1,222 @@
-"""Vision pipeline orchestrator for preprocessing and detection."""
+"""Vision pipeline orchestrator: modular stages (preprocess → detect → overlay).
+
+Pipeline is built from a list of stages so you can add, remove, or reorder stages
+without changing this file. Default build uses PreprocessPort + TagDetectorPort.
+See PIPELINE_MODULARITY.md for how to swap or add stages.
+"""
 
 import cv2
 import numpy as np
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from collections import deque
 import threading
 import time
 from ..ports.preprocess_port import PreprocessPort
 from ..ports.tag_detector_port import TagDetectorPort, TagDetection
+from ..ports.pipeline_stage_port import PipelineStagePort
 from ..services.logging_service import LoggingService
 
 
 class StageFrame:
     """Frame data for a specific pipeline stage."""
-    
+
     def __init__(self, stage: str, frame: np.ndarray, jpeg_bytes: Optional[bytes] = None):
-        self.stage = stage  # "raw", "preprocess", "detect_overlay"
-        self.frame = frame  # Raw numpy array
-        self.jpeg_bytes = jpeg_bytes  # JPEG-encoded bytes (cached)
-        self.timestamp = None  # Set when frame is created
-    
+        self.stage = stage
+        self.frame = frame
+        self.jpeg_bytes = jpeg_bytes
+        self.timestamp = None
+
     def get_jpeg_bytes(self) -> bytes:
-        """Get JPEG-encoded bytes (encode if not cached)."""
         if self.jpeg_bytes is None:
-            # Encode to JPEG
             encode_params = [cv2.IMWRITE_JPEG_QUALITY, 85]
             _, jpeg_bytes = cv2.imencode('.jpg', self.frame, encode_params)
-            if jpeg_bytes is not None:
-                self.jpeg_bytes = jpeg_bytes.tobytes()
-            else:
-                # Fallback: return empty bytes
-                self.jpeg_bytes = b''
+            self.jpeg_bytes = jpeg_bytes.tobytes() if jpeg_bytes is not None else b''
         return self.jpeg_bytes
 
 
+# --- Stage adapters: wrap PreprocessPort / TagDetectorPort for modular pipeline ---
+
+
+class _PreprocessStage(PipelineStagePort):
+    """Stage: raw grayscale → preprocessed (blur, threshold)."""
+
+    def __init__(self, preprocessor: PreprocessPort):
+        self._preprocessor = preprocessor
+
+    @property
+    def name(self) -> str:
+        return "preprocess"
+
+    def process(self, frame: np.ndarray, context: Dict[str, Any]) -> Tuple[Optional[np.ndarray], Dict[str, Any]]:
+        out = self._preprocessor.preprocess(frame)
+        return (out, context) if out is not None else (None, context)
+
+
+class _DetectStage(PipelineStagePort):
+    """Stage: preprocessed frame → run detector, fill context['detections']."""
+
+    def __init__(self, tag_detector: TagDetectorPort):
+        self._tag_detector = tag_detector
+
+    @property
+    def name(self) -> str:
+        return "detect"
+
+    def process(self, frame: np.ndarray, context: Dict[str, Any]) -> Tuple[np.ndarray, Dict[str, Any]]:
+        detections = self._tag_detector.detect(frame)
+        context["detections"] = detections
+        return frame, context
+
+
+class _OverlayStage(PipelineStagePort):
+    """Stage: draw detections on raw frame → overlay frame."""
+
+    def __init__(self, tag_detector: TagDetectorPort):
+        self._tag_detector = tag_detector
+
+    @property
+    def name(self) -> str:
+        return "detect_overlay"
+
+    def process(self, frame: np.ndarray, context: Dict[str, Any]) -> Tuple[np.ndarray, Dict[str, Any]]:
+        raw_frame = context.get("raw_frame", frame)
+        detections = context.get("detections", [])
+        overlay = self._tag_detector.draw_overlay(raw_frame, detections)
+        return overlay, context
+
+
+def _default_stages(preprocessor: PreprocessPort, tag_detector: TagDetectorPort) -> List[PipelineStagePort]:
+    """Build default stage list: preprocess → detect → overlay. Change order or add stages here."""
+    return [
+        _PreprocessStage(preprocessor),
+        _DetectStage(tag_detector),
+        _OverlayStage(tag_detector),
+    ]
+
+
 class VisionPipeline:
-    """Orchestrates the vision pipeline: Raw → Preprocess → Detect."""
-    
+    """Orchestrates the vision pipeline via a list of stages. Stages are run in order."""
+
     def __init__(
         self,
         preprocessor: PreprocessPort,
         tag_detector: TagDetectorPort,
-        logger: LoggingService
+        logger: LoggingService,
+        stages: Optional[List[PipelineStagePort]] = None,
     ):
-        self.preprocessor = preprocessor
-        self.tag_detector = tag_detector
         self.logger = logger
-        
-        # Frame queues for each stage (bounded, drop-oldest)
-        self.raw_frames: deque[StageFrame] = deque(maxlen=3)
-        self.preprocess_frames: deque[StageFrame] = deque(maxlen=3)
-        self.detect_overlay_frames: deque[StageFrame] = deque(maxlen=3)
-        
-        # Latest detections
+        self._stages: List[PipelineStagePort] = stages or _default_stages(preprocessor, tag_detector)
+        self._stage_frames: Dict[str, deque] = {}
+        for s in self._stages:
+            self._stage_frames[s.name] = deque(maxlen=3)
+        self.raw_frames: deque = deque(maxlen=3)
         self.latest_detections: List[TagDetection] = []
-        
-        # Detection statistics - track detection consistency
-        self.detection_stats: Dict[int, Dict[str, Any]] = {}  # tag_id -> {count, last_seen, first_seen}
+        self.detection_stats: Dict[int, Dict[str, Any]] = {}
         self.detection_stats_lock = threading.Lock()
-        
-        # Metrics
         self.frames_processed = 0
         self.detections_count = 0
         self.frames_with_detections = 0
         self.total_detections_all_tags = 0
-        
         self.logger.info("[Pipeline] VisionPipeline initialized")
-    
+
     def process_frame(self, raw_frame: np.ndarray) -> Dict[str, Any]:
-        """Process a raw frame through the pipeline.
-        
-        Pipeline stages:
-        1. Raw frame (input - grayscale for AprilTag cameras)
-        2. Preprocess (blur, threshold, etc.)
-        3. Detect (AprilTag detection)
-        4. Detect Overlay (draw detections on frame)
-        
-        Args:
-            raw_frame: Raw frame as numpy array (BGR format or grayscale converted to BGR)
-        
-        Returns:
-            Dict with stage frames and detections
-        """
+        """Run pipeline: raw → stage1 → stage2 → … Store each stage output; return frames + detections."""
         try:
-            # Stage 1: Raw frame (already grayscale for AprilTag cameras)
             raw_stage = StageFrame("raw", raw_frame)
             self.raw_frames.append(raw_stage)
-            
-            # Convert to grayscale for preprocessing if needed
             if len(raw_frame.shape) == 3:
-                gray_frame = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
+                gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
             else:
-                gray_frame = raw_frame
-            
-            # Stage 2: Preprocess (works on grayscale)
-            preprocessed = self.preprocessor.preprocess(gray_frame)
-            if preprocessed is None:
-                self.logger.warning("[Pipeline] Preprocessing failed, skipping detect stage")
-                return {
-                    "raw": raw_stage,
-                    "preprocess": None,
-                    "detect_overlay": None,
-                    "detections": []
-                }
-            
-            preprocess_stage = StageFrame("preprocess", preprocessed)
-            self.preprocess_frames.append(preprocess_stage)
-            
-            # Stage 3: Detect AprilTags
-            detections = self.tag_detector.detect(preprocessed)
+                gray = raw_frame.copy()
+
+            context: Dict[str, Any] = {"raw_frame": raw_frame, "detections": []}
+            frame = gray
+            preprocess_stage = None
+            detect_overlay_stage = None
+
+            for stage in self._stages:
+                if stage.name == "detect_overlay":
+                    frame, context = stage.process(context["raw_frame"], context)
+                else:
+                    frame, context = stage.process(frame, context)
+                if frame is None:
+                    if stage.name == "preprocess":
+                        self.logger.warning("[Pipeline] Preprocessing failed, skipping detect stage")
+                        return {
+                            "raw": raw_stage,
+                            "preprocess": None,
+                            "detect_overlay": None,
+                            "detections": [],
+                        }
+                    continue
+                sf = StageFrame(stage.name, frame)
+                self._stage_frames[stage.name].append(sf)
+                if stage.name == "preprocess":
+                    preprocess_stage = sf
+                elif stage.name == "detect_overlay":
+                    detect_overlay_stage = sf
+
+            detections = context.get("detections", [])
             self.latest_detections = detections
-            detection_count = len(detections)
-            self.detections_count += detection_count
-            self.total_detections_all_tags += detection_count
-            
-            # Update detection statistics for consistency tracking
+            n = len(detections)
+            self.detections_count += n
+            self.total_detections_all_tags += n
+
             current_time = time.time()
-            if detection_count > 0:
+            if n > 0:
                 self.frames_with_detections += 1
                 with self.detection_stats_lock:
-                    for det in detections:
-                        tag_id = det.tag_id
-                        if tag_id not in self.detection_stats:
-                            self.detection_stats[tag_id] = {
-                                "count": 0,
-                                "first_seen": current_time,
-                                "last_seen": current_time
-                            }
-                        self.detection_stats[tag_id]["count"] += 1
-                        self.detection_stats[tag_id]["last_seen"] = current_time
-            
-            # Log detection statistics every 100 frames
-            if self.frames_processed % 100 == 0 and self.frames_processed > 0:
+                    for d in detections:
+                        tid = d.tag_id
+                        if tid not in self.detection_stats:
+                            self.detection_stats[tid] = {"count": 0, "first_seen": current_time, "last_seen": current_time}
+                        self.detection_stats[tid]["count"] += 1
+                        self.detection_stats[tid]["last_seen"] = current_time
+
+            if self.frames_processed and self.frames_processed % 100 == 0:
                 with self.detection_stats_lock:
-                    stats_summary = {tag_id: stats["count"] for tag_id, stats in self.detection_stats.items()}
-                    detection_rate = (self.frames_with_detections / self.frames_processed) * 100
-                    self.logger.info(
-                        f"[Pipeline] Detection stats: {self.frames_processed} frames processed, "
-                        f"{detection_rate:.1f}% with detections, "
-                        f"Tags detected: {stats_summary}, "
-                        f"Latest: {[d.tag_id for d in detections]}"
-                    )
-            
-            # Stage 4: Draw overlay on raw frame (raw_frame is already grayscale-converted BGR format)
-            overlay_frame = self.tag_detector.draw_overlay(raw_frame, detections)
-            detect_overlay_stage = StageFrame("detect_overlay", overlay_frame)
-            self.detect_overlay_frames.append(detect_overlay_stage)
-            
+                    summary = {tid: s["count"] for tid, s in self.detection_stats.items()}
+                rate = (self.frames_with_detections / self.frames_processed) * 100
+                self.logger.info(
+                    f"[Pipeline] Detection stats: {self.frames_processed} frames, "
+                    f"{rate:.1f}% with detections, tags={summary}, latest={[d.tag_id for d in detections]}"
+                )
+
             self.frames_processed += 1
-            
-            return {
-                "raw": raw_stage,
-                "preprocess": preprocess_stage,
-                "detect_overlay": detect_overlay_stage,
-                "detections": detections
-            }
-        
+            out: Dict[str, Any] = {"raw": raw_stage, "detections": detections}
+            for s in self._stages:
+                out[s.name] = self._stage_frames[s.name][-1] if self._stage_frames[s.name] else None
+            return out
         except Exception as e:
-            self.logger.error(f"[Pipeline] Error processing frame in vision pipeline: {e}")
-            return {
-                "raw": None,
-                "preprocess": None,
-                "detect_overlay": None,
-                "detections": []
-            }
-    
+            self.logger.error(f"[Pipeline] Error processing frame: {e}")
+            out = {"raw": None, "detections": []}
+            for s in self._stages:
+                out[s.name] = None
+            return out
+
     def get_latest_frame(self, stage: str) -> Optional[StageFrame]:
-        """Get latest frame for a specific stage.
-        
-        Args:
-            stage: Stage name ("raw", "preprocess", "detect_overlay")
-        
-        Returns:
-            Latest StageFrame for the stage, or None if not available
-        """
         if stage == "raw":
             return self.raw_frames[-1] if self.raw_frames else None
-        elif stage == "preprocess":
-            return self.preprocess_frames[-1] if self.preprocess_frames else None
-        elif stage == "detect_overlay":
-            return self.detect_overlay_frames[-1] if self.detect_overlay_frames else None
-        else:
-            return None
-    
+        q = self._stage_frames.get(stage)
+        return q[-1] if q else None
+
     def get_latest_detections(self) -> List[TagDetection]:
-        """Get latest detections."""
         return self.latest_detections.copy()
-    
+
     def get_metrics(self) -> Dict[str, Any]:
-        """Get pipeline metrics."""
-        detection_rate = 0.0
+        rate = 0.0
         if self.frames_processed > 0:
-            detection_rate = (self.frames_with_detections / self.frames_processed) * 100
-        
-        # Get detection statistics
+            rate = (self.frames_with_detections / self.frames_processed) * 100
         with self.detection_stats_lock:
             tag_stats = {
-                tag_id: {
-                    "count": stats["count"],
-                    "detection_rate": (stats["count"] / self.frames_processed * 100) if self.frames_processed > 0 else 0.0
-                }
-                for tag_id, stats in self.detection_stats.items()
+                tid: {"count": s["count"], "detection_rate": (s["count"] / self.frames_processed * 100) if self.frames_processed else 0.0}
+                for tid, s in self.detection_stats.items()
             }
-        
         return {
             "frames_processed": self.frames_processed,
             "detections_count": self.detections_count,
             "latest_detections_count": len(self.latest_detections),
             "frames_with_detections": self.frames_with_detections,
-            "detection_rate_percent": round(detection_rate, 1),
-            "tag_statistics": tag_stats
+            "detection_rate_percent": round(rate, 1),
+            "tag_statistics": tag_stats,
         }

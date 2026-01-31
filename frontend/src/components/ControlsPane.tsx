@@ -389,27 +389,24 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
           </div>
         ) : (
           <>
-            <div className="control-group">
+            <div className="control-group controls-button-row">
               <button
-                className={`button ${isCameraOpen ? 'button-danger' : 'button-primary'}`}
+                className={`button button-half ${isCameraOpen ? 'button-danger' : 'button-primary'}`}
                 onClick={isCameraOpen ? onCameraClose : onCameraOpen}
                 disabled={loading || !cameraId}
               >
-                {loading ? 'Processing...' : (isCameraOpen ? 'Close Camera' : 'Open Camera')}
+                {loading ? '...' : (isCameraOpen ? 'Close' : 'Open')}
               </button>
-            </div>
-
-            {isCameraOpen && cameraControls.length > 0 && (
-              <div className="control-group">
+              {isCameraOpen && cameraControls.length > 0 && (
                 <button
-                  className="button button-secondary"
+                  className="button button-half button-secondary"
                   onClick={handleResetToDefaults}
                   disabled={loading}
                 >
-                  Reset to Defaults
+                  Reset
                 </button>
-              </div>
-            )}
+              )}
+            </div>
 
             <div className="control-group">
               <label>Resolution & FPS</label>

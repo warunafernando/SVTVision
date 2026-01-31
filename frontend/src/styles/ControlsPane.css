@@ -38,6 +38,19 @@
   margin-bottom: 12px;
 }
 
+.controls-button-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.button-half {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .loading-text,
 .no-options-text {
   padding: 8px;
@@ -62,7 +75,7 @@
 
 .slider {
   flex: 1;
-  height: 4px;
+  height: 3px;
   background-color: var(--bg-tertiary);
   border-radius: 2px;
   outline: none;
@@ -72,16 +85,16 @@
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 10px;
+  height: 10px;
   background-color: var(--accent);
   border-radius: 50%;
   cursor: pointer;
 }
 
 .slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
+  width: 10px;
+  height: 10px;
   background-color: var(--accent);
   border-radius: 50%;
   cursor: pointer;
@@ -125,6 +138,13 @@
 .button-apply {
   width: 100%;
   margin-top: 8px;
+  padding: 4px 8px;
+  line-height: 1.2;
+}
+
+.controls-content .select {
+  padding: 4px 8px;
+  min-height: 28px;
 }
 
 .verify-status {
@@ -188,8 +208,8 @@
 .switch {
   position: relative;
   display: inline-block;
-  width: 44px;
-  height: 22px;
+  width: 34px;
+  height: 18px;
 }
 
 .switch input {
@@ -207,14 +227,14 @@
   bottom: 0;
   background-color: var(--bg-tertiary);
   transition: 0.3s;
-  border-radius: 22px;
+  border-radius: 18px;
 }
 
 .slider-toggle:before {
   position: absolute;
   content: "";
-  height: 16px;
-  width: 16px;
+  height: 12px;
+  width: 12px;
   left: 3px;
   bottom: 3px;
   background-color: white;
@@ -227,7 +247,7 @@
 }
 
 .switch input:checked + .slider-toggle:before {
-  transform: translateX(22px);
+  transform: translateX(16px);
 }
 
 .switch input:disabled + .slider-toggle {

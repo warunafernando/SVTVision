@@ -497,8 +497,14 @@ class WebServerAdapter:
                 await websocket.close(code=1008, reason="Missing camera parameter")
                 return
             
-            # Validate stage
-            valid_stages = ["raw", "preprocess", "detect_overlay"]
+            manager = self.camera_service.get_camera_manager(camera_id)
+            if not manager:
+                await websocket.close(code=1008, reason="Camera manager not found")
+                return
+            
+            # Validate stage from pipeline (or default stages if no pipeline)
+            pipeline = getattr(manager, "vision_pipeline", None)
+            valid_stages = ["raw"] + ([s.name for s in pipeline._stages] if pipeline and hasattr(pipeline, "_stages") else ["preprocess", "detect_overlay"])
             if stage not in valid_stages:
                 await websocket.close(code=1008, reason=f"Invalid stage: {stage}. Must be one of {valid_stages}")
                 return
@@ -506,11 +512,6 @@ class WebServerAdapter:
             # Check if camera is open
             if not self.camera_service.is_camera_open(camera_id):
                 await websocket.close(code=1008, reason="Camera not open")
-                return
-            
-            manager = self.camera_service.get_camera_manager(camera_id)
-            if not manager:
-                await websocket.close(code=1008, reason="Camera manager not found")
                 return
             
             self.logger.info(f"Starting video stream for camera {camera_id}, stage={stage}")

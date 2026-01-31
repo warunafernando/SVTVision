@@ -134,6 +134,15 @@
   align-items: flex-start;
 }
 
+.console-header-row {
+  color: #858585;
+  font-weight: 600;
+  font-size: 11px;
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid #333;
+}
+
 .console-time {
   color: #858585;
   flex-shrink: 0;
@@ -150,9 +159,12 @@
 
 .console-section {
   flex-shrink: 0;
-  min-width: 72px;
+  min-width: 88px;
+  max-width: 88px;
   color: #9cdcfe;
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .console-line.console-error .console-level {
