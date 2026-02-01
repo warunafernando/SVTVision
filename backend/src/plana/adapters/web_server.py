@@ -11,10 +11,13 @@ from ..services.health_service import HealthService
 from ..domain.debug_tree_manager import DebugTreeManager
 from ..domain.camera_discovery import CameraDiscovery
 from ..domain.camera_service import CameraService
+from ..domain.algorithm_store import AlgorithmStore
+from ..domain.stage_registry import StageRegistry
+from ..domain.vision_pipeline_manager import VisionPipelineManager
 from ..services.logging_service import LoggingService
 from ..services.camera_config_service import CameraConfigService
 from ..adapters.selftest_runner import SelfTestRunner
-from fastapi import HTTPException, WebSocket, WebSocketDisconnect, Body
+from fastapi import HTTPException, WebSocket, WebSocketDisconnect, Body, Request
 from pydantic import BaseModel
 from typing import Optional
 import asyncio
@@ -34,6 +37,9 @@ class WebServerAdapter:
         camera_discovery: CameraDiscovery,
         camera_config_service: CameraConfigService,
         camera_service: CameraService,
+        algorithm_store: AlgorithmStore,
+        stage_registry: StageRegistry,
+        vision_pipeline_manager: VisionPipelineManager,
         frontend_dist_path: Path
     ):
         self.config_service = config_service
@@ -44,6 +50,9 @@ class WebServerAdapter:
         self.camera_discovery = camera_discovery
         self.camera_config_service = camera_config_service
         self.camera_service = camera_service
+        self.algorithm_store = algorithm_store
+        self.stage_registry = stage_registry
+        self.vision_pipeline_manager = vision_pipeline_manager
         self.frontend_dist_path = frontend_dist_path
         
         self.app = FastAPI(title="SVTVision API")
@@ -58,7 +67,45 @@ class WebServerAdapter:
     
     def _setup_routes(self):
         """Set up API routes."""
-        
+        # Algorithms API - register directly on app first to avoid 405 with catch-all
+        @self.app.get("/api/algorithms")
+        async def list_algorithms() -> Dict[str, Any]:
+            items = self.algorithm_store.list_all()
+            return {"algorithms": items}
+
+        @self.app.get("/api/algorithms/{algo_id}")
+        async def get_algorithm(algo_id: str) -> Dict[str, Any]:
+            data = self.algorithm_store.get(algo_id)
+            if not data:
+                raise HTTPException(status_code=404, detail="Algorithm not found")
+            return data
+
+        @self.app.post("/api/algorithms")
+        async def create_algorithm(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+            name = request.get("name", "Untitled")
+            nodes = request.get("nodes", [])
+            edges = request.get("edges", [])
+            layout = request.get("layout", {})
+            algo_id = self.algorithm_store.save(None, name, nodes, edges, layout)
+            return {"id": algo_id, "name": name}
+
+        @self.app.put("/api/algorithms/{algo_id}")
+        async def update_algorithm(algo_id: str, request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+            existing = self.algorithm_store.get(algo_id)
+            if not existing:
+                raise HTTPException(status_code=404, detail="Algorithm not found")
+            name = request.get("name", existing.get("name", "Untitled"))
+            nodes = request.get("nodes", existing.get("nodes", []))
+            edges = request.get("edges", existing.get("edges", []))
+            layout = request.get("layout", existing.get("layout", {}))
+            self.algorithm_store.save(algo_id, name, nodes, edges, layout)
+            return {"id": algo_id, "name": name}
+
+        @self.app.delete("/api/algorithms/{algo_id}")
+        async def delete_algorithm(algo_id: str) -> None:
+            if not self.algorithm_store.delete(algo_id):
+                raise HTTPException(status_code=404, detail="Algorithm not found")
+
         @self.app.get("/api/system")
         async def get_system() -> Dict[str, Any]:
             """Get system information."""
@@ -85,7 +132,123 @@ class WebServerAdapter:
         async def run_selftest(test: str) -> Dict[str, Any]:
             """Run a self-test."""
             return self.self_test_runner.run_test(test)
-        
+
+        # Vision Pipeline (VP) API stubs - Stage 0
+        @self.app.get("/api/vp")
+        async def vp_info() -> Dict[str, Any]:
+            """Vision Pipeline API info stub."""
+            return {"version": "0.1", "status": "skeleton", "message": "VP API stubs"}
+
+        @self.app.get("/api/vp/stages")
+        async def vp_stages() -> Dict[str, Any]:
+            """Vision Pipeline stages from StageRegistry (palette discovery). Stage 9: includes custom stages."""
+            return self.stage_registry.list_all()
+
+        @self.app.post("/api/vp/stages")
+        async def vp_stages_add(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+            """Stage 9: Register a custom stage (plugin-based addition). Palette auto-updates on next GET."""
+            ok = self.stage_registry.add_stage(request)
+            if not ok:
+                raise HTTPException(status_code=400, detail="Invalid stage or id conflicts with built-in")
+            return {"ok": True, "id": request.get("id")}
+
+        @self.app.delete("/api/vp/stages/{stage_id}")
+        async def vp_stages_remove(stage_id: str) -> Dict[str, Any]:
+            """Stage 9: Remove a custom stage. Only custom stages can be removed."""
+            if not self.stage_registry.remove_stage(stage_id):
+                raise HTTPException(status_code=400, detail="Not a custom stage or not found")
+            return {"ok": True, "id": stage_id}
+
+        @self.app.get("/api/vp/algorithms")
+        async def vp_algorithms() -> Dict[str, Any]:
+            """Vision Pipeline algorithms (saved graphs)."""
+            items = self.algorithm_store.list_all()
+            return {"algorithms": items}
+
+        @self.app.post("/api/vp/validate")
+        async def vp_validate(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+            """Validate pipeline graph (DAG, single-source, single-input-per-port)."""
+            from ..domain.graph_model import (
+                PipelineGraph,
+                GraphNode,
+                GraphEdge,
+                validate_graph,
+                GraphValidationError,
+            )
+            nodes_raw = request.get("nodes", [])
+            edges_raw = request.get("edges", [])
+            nodes = [
+                GraphNode(
+                    id=n.get("id", ""),
+                    type=n.get("type", "stage"),
+                    stage_id=n.get("stage_id"),
+                    source_type=n.get("source_type"),
+                    sink_type=n.get("sink_type"),
+                    config=n.get("config"),
+                    ports=n.get("ports"),
+                )
+                for n in nodes_raw
+            ]
+            edges = [
+                GraphEdge(
+                    id=e.get("id", ""),
+                    source_node=e.get("source_node", ""),
+                    source_port=e.get("source_port", ""),
+                    target_node=e.get("target_node", ""),
+                    target_port=e.get("target_port", ""),
+                )
+                for e in edges_raw
+            ]
+            graph = PipelineGraph(nodes=nodes, edges=edges)
+            try:
+                validate_graph(graph)
+                return {"valid": True, "errors": []}
+            except GraphValidationError as ex:
+                return {"valid": False, "errors": ex.errors}
+
+        @self.app.post("/api/vp/compile")
+        async def vp_compile(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+            """Compile pipeline graph to execution plan (main path + side taps). Stage 5."""
+            from ..domain.runtime_compiler import compile_graph, GraphValidationError
+            nodes_raw = request.get("nodes", [])
+            edges_raw = request.get("edges", [])
+            try:
+                plan = compile_graph(nodes_raw, edges_raw)
+                return {"valid": True, "plan": plan.to_dict()}
+            except GraphValidationError as ex:
+                return {"valid": False, "errors": ex.errors}
+
+        # Pipeline instances (start/stop/list)
+        @self.app.get("/api/pipelines")
+        async def get_pipelines() -> Dict[str, Any]:
+            instances = self.vision_pipeline_manager.list_instances()
+            return {"instances": instances}
+
+        @self.app.get("/api/pipelines/{instance_id}")
+        async def get_pipeline(instance_id: str) -> Dict[str, Any]:
+            inst = self.vision_pipeline_manager.get_instance(instance_id)
+            if not inst:
+                raise HTTPException(status_code=404, detail="Pipeline instance not found")
+            return inst
+
+        @self.app.post("/api/pipelines")
+        async def post_pipelines(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+            algorithm_id = request.get("algorithm_id", "apriltag_cpu")
+            target = request.get("target")
+            if not target:
+                raise HTTPException(status_code=400, detail="target (camera_id) is required")
+            instance_id = self.vision_pipeline_manager.start(algorithm_id, target)
+            if not instance_id:
+                raise HTTPException(status_code=500, detail="Failed to start pipeline (camera may be in use)")
+            return {"id": instance_id, "state": "running"}
+
+        @self.app.post("/api/pipelines/{instance_id}/stop")
+        async def post_pipeline_stop(instance_id: str) -> Dict[str, Any]:
+            success = self.vision_pipeline_manager.stop(instance_id)
+            if not success:
+                raise HTTPException(status_code=404, detail="Pipeline instance not found or already stopped")
+            return {"id": instance_id, "state": "stopped"}
+
         # Camera discovery endpoints
         @self.app.get("/api/cameras")
         async def get_cameras() -> Dict[str, Any]:
@@ -359,8 +522,8 @@ class WebServerAdapter:
         
         # Camera open/close endpoints
         @self.app.post("/api/cameras/{camera_id}/open")
-        async def open_camera(camera_id: str) -> Dict[str, Any]:
-            """Open a camera for streaming."""
+        async def open_camera(camera_id: str, request: Request) -> Dict[str, Any]:
+            """Open a camera for streaming. Optional body: { stream_only: true } to open without vision pipeline (avoids apriltag)."""
             # Get camera details to find device path
             camera_details = self.camera_discovery.get_camera_details(camera_id)
             if not camera_details:
@@ -370,11 +533,23 @@ class WebServerAdapter:
             if not device_path:
                 raise HTTPException(status_code=400, detail="Camera device path not available")
             
-            # Open camera
+            # Default True to avoid vision pipeline (apriltag) crash; set false in body to use pipeline
+            stream_only = True
+            try:
+                body_bytes = await request.body()
+                if body_bytes:
+                    import json
+                    body = json.loads(body_bytes)
+                    if isinstance(body, dict) and "stream_only" in body:
+                        stream_only = bool(body["stream_only"])
+            except Exception:
+                pass
+            self.logger.info(f"[Stream] Opening camera {camera_id} stream_only={stream_only}")
             try:
                 success = self.camera_service.open_camera(
                     camera_id,
-                    device_path
+                    device_path,
+                    stream_only=stream_only,
                 )
             except Exception as e:
                 self.logger.error(f"[Stream] Open camera {camera_id} exception: {e}")
@@ -565,15 +740,71 @@ class WebServerAdapter:
                     await websocket.close(code=1011, reason="Internal error")
                 except:
                     pass
-        
+
+        # Stage 7: WebSocket endpoint for StreamTap
+        @self.app.websocket("/ws/vp/tap/{instance_id}/{tap_id}")
+        async def stream_tap_video(websocket: WebSocket, instance_id: str, tap_id: str):
+            """WebSocket endpoint for StreamTap video streaming (Stage 7)."""
+            await websocket.accept()
+            
+            tap = self.vision_pipeline_manager.get_stream_tap(instance_id, tap_id)
+            if not tap:
+                await websocket.close(code=1008, reason=f"StreamTap {tap_id} not found for instance {instance_id}")
+                return
+
+            self.logger.info(f"[StreamTap] Started streaming {tap_id} for instance {instance_id}")
+            frames_sent = 0
+            last_jpeg = None
+
+            try:
+                while True:
+                    # Get latest frame from StreamTap
+                    jpeg_data = tap.get_jpeg()
+                    
+                    if jpeg_data and jpeg_data != last_jpeg:
+                        try:
+                            frame_b64 = base64.b64encode(jpeg_data).decode('utf-8')
+                            await websocket.send_json({
+                                "type": "frame",
+                                "tap_id": tap_id,
+                                "instance_id": instance_id,
+                                "data": frame_b64,
+                                "metrics": tap.get_metrics(),
+                            })
+                            last_jpeg = jpeg_data
+                            frames_sent += 1
+                            if frames_sent % 100 == 0:
+                                self.logger.info(f"[StreamTap] {tap_id}: Sent {frames_sent} frames")
+                        except Exception as e:
+                            self.logger.error(f"[StreamTap] Error sending frame: {e}")
+                            break
+                    
+                    await asyncio.sleep(0.033)  # ~30fps
+            except WebSocketDisconnect:
+                self.logger.info(f"[StreamTap] WebSocket disconnected for {tap_id}")
+            except Exception as e:
+                self.logger.error(f"[StreamTap] Error in stream for {tap_id}: {e}")
+                try:
+                    await websocket.close(code=1011, reason="Internal error")
+                except:
+                    pass
+
+        # API to list StreamTaps for a pipeline instance
+        @self.app.get("/api/vp/taps/{instance_id}")
+        async def list_stream_taps(instance_id: str) -> Dict[str, Any]:
+            """List all StreamTaps for a pipeline instance."""
+            return {"taps": self.vision_pipeline_manager.list_stream_taps(instance_id)}
+
         # Serve static files in production mode
         if self.frontend_dist_path.exists():
             @self.app.get("/{full_path:path}")
             async def serve_frontend(full_path: str):
-                """Serve frontend static files."""
+                """Serve frontend static files. Exclude /api to avoid shadowing API routes."""
+                if full_path.startswith("api/") or full_path.startswith("api"):
+                    raise HTTPException(status_code=404, detail="Not found")
                 if full_path == "" or full_path == "/":
                     full_path = "index.html"
-                
+
                 file_path = self.frontend_dist_path / full_path
                 if file_path.exists() and file_path.is_file():
                     return FileResponse(file_path)

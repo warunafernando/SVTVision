@@ -40,3 +40,37 @@ export interface Detection {
   lastSeen: number;
   latency: number;
 }
+
+/** Vision Pipeline graph types (Stage 1/2) */
+export interface VPNode {
+  id: string;
+  type: 'source' | 'stage' | 'sink';
+  stage_id?: string;
+  source_type?: string;
+  sink_type?: string;
+  name?: string;  // Custom label (e.g. for user-named stages)
+  config?: Record<string, unknown>;
+  ports?: { inputs: { name: string; type: string }[]; outputs: { name: string; type: string }[] };
+}
+
+export interface VPEdge {
+  id: string;
+  source_node: string;
+  source_port: string;
+  target_node: string;
+  target_port: string;
+}
+
+/** Pipeline graph for algorithm save/load */
+export interface PipelineGraph {
+  name?: string;
+  description?: string;
+  nodes: VPNode[];
+  edges: VPEdge[];
+  layout?: Record<string, { x: number; y: number }>;
+}
+
+export interface AlgorithmMeta {
+  id: string;
+  name: string;
+}

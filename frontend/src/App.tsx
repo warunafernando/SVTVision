@@ -5,6 +5,7 @@ import DebugTree from './components/DebugTree';
 import ConsoleOutput from './components/ConsoleOutput';
 import CamerasPage from './pages/CamerasPage';
 import CameraDiscoveryPage from './pages/CameraDiscoveryPage';
+import VisionPipelinePage from './pages/VisionPipelinePage';
 import SettingsPage from './pages/SettingsPage';
 import SelfTestPage from './pages/SelfTestPage';
 import { fetchSystemInfo, fetchDebugTree } from './utils/api';
@@ -15,7 +16,7 @@ const App: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [debugTreeNodes, setDebugTreeNodes] = useState<DebugTreeNode[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('reconnecting');
 
   useEffect(() => {
     const loadData = async () => {
@@ -30,7 +31,6 @@ const App: React.FC = () => {
       } catch (error) {
         console.error('Failed to load data:', error);
         setConnectionStatus('disconnected');
-        // Fallback to reconnecting
         setTimeout(() => {
           setConnectionStatus('reconnecting');
           loadData();
@@ -38,11 +38,13 @@ const App: React.FC = () => {
       }
     };
 
-    loadData();
-    
-    // Poll for updates every 2 seconds
+    // Brief delay so backend is ready when just started on same machine
+    const t = setTimeout(loadData, 300);
     const interval = setInterval(loadData, 2000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(t);
+      clearInterval(interval);
+    };
   }, []);
 
   const handleNodeClick = (node: DebugTreeNode) => {
@@ -59,7 +61,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <div className="app">
         <TopBar systemInfo={displaySystemInfo} />
         <div className="app-body">
@@ -76,6 +78,7 @@ const App: React.FC = () => {
               <Route path="/" element={<CamerasPage />} />
               <Route path="/cameras" element={<CamerasPage />} />
               <Route path="/discovery" element={<CameraDiscoveryPage />} />
+              <Route path="/vision-pipeline" element={<VisionPipelinePage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/selftest" element={<SelfTestPage />} />
             </Routes>
@@ -93,6 +96,7 @@ const Navigation: React.FC = () => {
   const navItems = [
     { path: '/cameras', label: 'Cameras' },
     { path: '/discovery', label: 'Discovery' },
+    { path: '/vision-pipeline', label: 'Vision Pipeline' },
     { path: '/settings', label: 'Settings' },
     { path: '/selftest', label: 'Self-Test' },
   ];

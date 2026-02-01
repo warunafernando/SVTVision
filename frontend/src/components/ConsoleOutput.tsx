@@ -14,16 +14,22 @@ const ConsoleOutput: React.FC = () => {
   const [messages, setMessages] = useState<ConsoleMessage[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isVisible, setIsVisible] = useState(true); // Track if console is visible
+  const [isPaused, setIsPaused] = useState(false);
   const [filterLevel, setFilterLevel] = useState<'all' | 'errors' | 'warnings' | 'logs'>('all');
   const [filterSection, setFilterSection] = useState<string>('all');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageIdRef = useRef(0);
-  
+  const isPausedRef = useRef(false);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
   // Extract unique sections from messages (always include common sections)
   const messageSections = Array.from(
     new Set(messages.map(m => m.section).filter(Boolean) as string[])
   );
-  const availableSections = ['controls', 'settings', 'camera', 'stream', 'api', 'errors', ...messageSections]
+  const availableSections = ['controls', 'settings', 'camera', 'stream', 'api', 'errors', 'Vision Pipeline', ...messageSections]
     .filter((v, i, a) => a.indexOf(v) === i) // Remove duplicates
     .sort();
 
@@ -53,6 +59,7 @@ const ConsoleOutput: React.FC = () => {
     const originalInfo = console.info;
 
     const addMessage = (level: ConsoleMessage['level'], args: any[]) => {
+      if (isPausedRef.current) return;
       const messageStr = args.map(arg => 
         typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
       ).join(' ');
@@ -214,6 +221,15 @@ const ConsoleOutput: React.FC = () => {
           </span>
         </div>
         <div className="console-filter" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className={`console-pause-btn ${isPaused ? 'paused' : ''}`}
+            onClick={() => setIsPaused(p => !p)}
+            title={isPaused ? 'Resume console output' : 'Pause console to copy errors'}
+          >
+            {isPaused ? 'Resume' : 'Pause'}
+          </button>
+          {isPaused && <span className="console-paused-label">Paused — copy text, then click Resume</span>}
           <select
             className="console-filter-select"
             value={filterLevel}

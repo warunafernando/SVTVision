@@ -36,9 +36,9 @@ const TopBar: React.FC<TopBarProps> = ({ systemInfo }) => {
             {systemInfo.health}
           </span>
         </div>
-        <div className="connection-indicator">
+        <div className="connection-indicator" title={systemInfo.connection === 'disconnected' ? 'Backend not reachable. Start with: ./start.sh (or set VITE_API_BASE if backend is on another host)' : ''}>
           <span className={`connection-status ${systemInfo.connection}`}>
-            {getConnectionIcon()} {systemInfo.connection}
+            {getConnectionIcon()} {systemInfo.connection === 'disconnected' ? 'Unable to connect' : systemInfo.connection}
           </span>
         </div>
       </div>

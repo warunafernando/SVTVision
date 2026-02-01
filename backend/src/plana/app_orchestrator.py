@@ -8,6 +8,9 @@ from .services.message_bus import MessageBus
 from .domain.debug_tree_manager import DebugTreeManager
 from .domain.camera_discovery import CameraDiscovery
 from .domain.camera_service import CameraService
+from .domain.algorithm_store import AlgorithmStore
+from .domain.stage_registry import StageRegistry
+from .domain.vision_pipeline_manager import VisionPipelineManager
 from .adapters.uvc_v4l2_discovery import UVCV4L2DiscoveryAdapter
 from .adapters.web_server import WebServerAdapter
 from .adapters.selftest_runner import SelfTestRunner
@@ -44,6 +47,12 @@ class AppOrchestrator:
             camera_discovery=None  # Will be set below
         )
         
+        # Initialize algorithm store (persists PipelineGraphs)
+        self.algorithm_store = AlgorithmStore(config_dir, self.logger)
+
+        # Initialize stage registry (palette discovery)
+        self.stage_registry = StageRegistry(config_dir, self.logger)
+
         # Initialize camera discovery
         discovery_adapter = UVCV4L2DiscoveryAdapter(self.logger)
         self.camera_discovery = CameraDiscovery(
@@ -55,6 +64,14 @@ class AppOrchestrator:
         
         # Set camera_discovery in debug_tree_manager after it's created
         self.debug_tree_manager.camera_discovery = self.camera_discovery
+
+        # Initialize vision pipeline manager (start/stop pipeline instances)
+        self.vision_pipeline_manager = VisionPipelineManager(
+            self.camera_service,
+            self.camera_discovery,
+            self.algorithm_store,
+            self.logger,
+        )
         
         # Initialize adapters
         self.self_test_runner = SelfTestRunner(
@@ -71,6 +88,9 @@ class AppOrchestrator:
             self.camera_discovery,
             self.camera_config_service,
             self.camera_service,
+            self.algorithm_store,
+            self.stage_registry,
+            self.vision_pipeline_manager,
             frontend_dist_path
         )
         
@@ -101,7 +121,10 @@ class AppOrchestrator:
         self._start_hotplug_monitoring()
     
     def _auto_start_cameras(self):
-        """Auto-start cameras that have saved resolution/FPS settings."""
+        """Auto-start cameras that have saved resolution/FPS settings (unless disabled)."""
+        if not self.config_service.get("auto_start_cameras", True):
+            self.logger.info("[App] Auto-start cameras disabled (auto_start_cameras=false); vision pipeline not started")
+            return
         cameras = self.camera_discovery.get_camera_list()
         if not cameras:
             self.logger.info("[App] No cameras found for auto-start")

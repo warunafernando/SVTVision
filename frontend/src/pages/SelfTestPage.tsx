@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE } from '../utils/config';
 import '../styles/SelfTestPage.css';
 
 interface TestResult {
@@ -15,7 +16,7 @@ const SelfTestPage: React.FC = () => {
   const runTest = async (testName: string) => {
     setRunning(true);
     try {
-      const response = await fetch(`/api/selftest/run?test=${testName}`);
+      const response = await fetch(`${API_BASE}/selftest/run?test=${testName}`);
       const data = await response.json();
       setResults(prev => [...prev, {
         name: testName,

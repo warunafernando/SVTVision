@@ -1,0 +1,272 @@
+.vp-props-panel {
+  width: 320px;
+  min-width: 320px;
+  flex-shrink: 0;
+  background-color: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Single scrollable panel: header + Node Properties + Pipeline Controls + Pipeline Manager */
+.vp-props-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.vp-props-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vp-props-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.vp-props-section {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vp-props-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 10px 0;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.vp-props-empty {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.vp-props-node {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vp-props-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vp-props-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 48px;
+}
+
+.vp-props-value {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.vp-props-select,
+.vp-props-input {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.vp-props-btn {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.vp-props-btn:last-child {
+  margin-bottom: 0;
+}
+
+.vp-props-btn-primary {
+  background: var(--status-ok);
+  color: white;
+  border: none;
+  font-weight: 600;
+}
+
+.vp-props-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.vp-props-btn-secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.vp-props-btn-secondary:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+}
+
+.vp-props-btn-small {
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+  height: 24px;
+  min-height: 24px;
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.vp-props-btn-danger {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+
+.vp-props-save-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.vp-props-save-input {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.vp-props-error {
+  font-size: 11px;
+  color: var(--status-error);
+  margin-top: 6px;
+}
+
+.vp-props-success {
+  font-size: 11px;
+  color: var(--status-ok);
+  margin-top: 6px;
+}
+
+.vp-props-validate {
+  font-size: 11px;
+  padding: 6px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.vp-props-validate-ok {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--status-ok);
+}
+
+.vp-props-validate-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--status-error);
+}
+
+.vp-props-manager-actions,
+.vp-props-pipeline-dropdown-row {
+  margin-bottom: 8px;
+}
+
+.vp-props-pipeline-select {
+  width: 100%;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.vp-props-pipeline-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+
+.vp-props-algo-list,
+.vp-props-instance-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.vp-props-algo-item,
+.vp-props-instance-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.vp-props-algo-item:last-child,
+.vp-props-instance-item:last-child {
+  border-bottom: none;
+}
+
+.vp-props-algo-name {
+  flex: 1;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.vp-props-algo-name:hover {
+  color: var(--status-ok);
+}
+
+.vp-props-instance-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.vp-props-instance-status {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.vp-props-instance-status-running {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--status-ok);
+}
+
+.vp-props-instance-status-stopped {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.vp-props-instance-status-error {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--status-error);
+}

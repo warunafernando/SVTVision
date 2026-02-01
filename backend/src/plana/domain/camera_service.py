@@ -44,11 +44,14 @@ class CameraService:
         width: Optional[int] = None,
         height: Optional[int] = None,
         fps: Optional[float] = None,
-        format: Optional[str] = None
+        format: Optional[str] = None,
+        vision_pipeline: Optional[Any] = None,
+        stream_only: bool = False,
     ) -> bool:
         """Open a camera.
         
         If width/height/fps/format are not provided, loads from saved config.
+        If stream_only is True, opens without vision pipeline (stream only, no apriltag).
         """
         # Check if already open
         if camera_id in self.camera_managers:
@@ -77,11 +80,11 @@ class CameraService:
         camera_adapter = OpenCVCameraAdapter(self.logger)
         encoder = MJPEGEncoderAdapter(self.logger)
         
-        # Get use_case from config (default to 'apriltag')
+        # Get use_case from config (default to 'apriltag'); skip vision pipeline if stream_only
         camera_config = self.camera_config_service.get_camera_config(camera_id) or {}
-        use_case = camera_config.get('use_case', 'apriltag')
+        use_case = 'stream_only' if stream_only else camera_config.get('use_case', 'apriltag')
         
-        # Create vision pipeline if use_case is 'apriltag'
+        # Create vision pipeline only if use_case is 'apriltag' (not stream_only)
         vision_pipeline = None
         if use_case == 'apriltag':
             preprocessor = PreprocessAdapter(self.logger)
@@ -104,7 +107,9 @@ class CameraService:
             tag_detector = AprilTagDetectorAdapter(self.logger, family="tag36h11")
             vision_pipeline = VisionPipeline(preprocessor, tag_detector, self.logger)
             self.logger.info(f"[CameraService] Created vision pipeline for camera {camera_id}")
-        
+        elif vision_pipeline is not None:
+            self.logger.info(f"[CameraService] Using custom vision pipeline for camera {camera_id}")
+
         # Create manager with use_case and vision_pipeline
         manager = CameraManager(
             camera_adapter,

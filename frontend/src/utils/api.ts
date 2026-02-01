@@ -1,6 +1,5 @@
 import { SystemInfo, DebugTreeNode } from '../types';
-
-const API_BASE = '/api';
+import { API_BASE } from './config';
 
 export async function fetchSystemInfo(): Promise<SystemInfo> {
   const response = await fetch(`${API_BASE}/system`);

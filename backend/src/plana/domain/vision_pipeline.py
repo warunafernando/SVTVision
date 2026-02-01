@@ -103,6 +103,7 @@ class VisionPipeline:
         tag_detector: TagDetectorPort,
         logger: LoggingService,
         stages: Optional[List[PipelineStagePort]] = None,
+        stream_taps: Optional[Dict[str, List[Any]]] = None,
     ):
         self.logger = logger
         self._stages: List[PipelineStagePort] = stages or _default_stages(preprocessor, tag_detector)
@@ -117,7 +118,21 @@ class VisionPipeline:
         self.detections_count = 0
         self.frames_with_detections = 0
         self.total_detections_all_tags = 0
+        self._stream_taps: Dict[str, List[Any]] = stream_taps or {}
         self.logger.info("[Pipeline] VisionPipeline initialized")
+
+    @classmethod
+    def from_stages(
+        cls,
+        stages: List[PipelineStagePort],
+        logger: LoggingService,
+        stream_taps: Optional[Dict[str, List[Any]]] = None,
+    ) -> "VisionPipeline":
+        """Create pipeline from stage list (for graph-based execution, Stage 6)."""
+        pipeline = cls(None, None, logger, stages=stages)
+        if stream_taps:
+            pipeline._stream_taps = stream_taps
+        return pipeline
 
     def process_frame(self, raw_frame: np.ndarray) -> Dict[str, Any]:
         """Run pipeline: raw → stage1 → stage2 → … Store each stage output; return frames + detections."""
@@ -155,6 +170,13 @@ class VisionPipeline:
                     preprocess_stage = sf
                 elif stage.name == "detect_overlay":
                     detect_overlay_stage = sf
+
+                # Stage 7: Dispatch to attached StreamTaps
+                for tap in self._stream_taps.get(stage.name, []):
+                    try:
+                        tap.push_frame(frame)
+                    except Exception as e:
+                        self.logger.warning(f"[Pipeline] StreamTap dispatch error: {e}")
 
             detections = context.get("detections", [])
             self.latest_detections = detections

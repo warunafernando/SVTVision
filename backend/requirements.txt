@@ -2,8 +2,11 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
 python-multipart==0.0.6
-v4l2-python3==0.4.2
+v4l2-python3==0.3.5
 pyudev==0.24.1
 opencv-python-headless==4.8.1.78
 numpy==1.24.3
-apriltag==3.3.0
+apriltag==0.0.16
+# Testing (httpx < 0.28 for starlette TestClient compatibility)
+pytest>=7.0
+httpx>=0.24.0,<0.28

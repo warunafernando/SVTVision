@@ -1,0 +1,26 @@
+{
+  "stages": [
+    {
+      "id": "custom_test_stage",
+      "name": "TestStage",
+      "label": "Test Stage",
+      "execution_type": "cpu",
+      "type": "stage",
+      "ports": {
+        "inputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      },
+      "settings_schema": []
+    }
+  ]
+}

@@ -24,8 +24,7 @@ const TopFaults: React.FC<TopFaultsProps> = ({ maxFaults = 5 }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const apiBase = typeof window !== 'undefined' ? window.location.origin : '';
-    const url = `${apiBase}/api/debug/top-faults?max_faults=${maxFaults}`;
+    const url = `${API_BASE}/debug/top-faults?max_faults=${maxFaults}`;
 
     const fetchFaults = async () => {
       try {

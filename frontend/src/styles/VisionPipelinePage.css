@@ -1,0 +1,72 @@
+.vision-pipeline-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vp-header {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--bg-secondary);
+}
+
+.vp-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: var(--text-primary);
+}
+
+.vp-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.vp-content {
+  flex: 1;
+  padding: 24px;
+  overflow: auto;
+}
+
+.vp-content-stage2 {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.vp-content-three-col {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.vp-content-three-col > *:first-child,
+.vp-content-three-col > *:last-child {
+  flex-shrink: 0;
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+}
+
+.vp-content-three-col > *:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.vp-placeholder-message {
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-align: center;
+  padding: 48px 24px;
+}

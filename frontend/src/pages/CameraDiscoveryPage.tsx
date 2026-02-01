@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchCameras, fetchCameraDetails, fetchCameraCapabilities, fetchCameraControls, CameraDetails, CameraCapabilities, CameraControl } from '../utils/cameraApi';
+import { API_BASE } from '../utils/config';
 import { Camera } from '../types';
 import '../styles/CameraDiscoveryPage.css';
 
@@ -143,7 +144,7 @@ const CameraDiscoveryPage: React.FC = () => {
       for (const camera of cameras) {
         try {
           // Load camera name
-          const nameResponse = await fetch(`/api/cameras/${camera.id}/name`);
+          const nameResponse = await fetch(`${API_BASE}/cameras/${camera.id}/name`);
           if (nameResponse.ok) {
             const nameConfig = await nameResponse.json();
             if (nameConfig.name) {
@@ -155,7 +156,7 @@ const CameraDiscoveryPage: React.FC = () => {
           }
           
           // Load camera use case from settings
-          const settingsResponse = await fetch(`/api/cameras/${camera.id}/settings`);
+          const settingsResponse = await fetch(`${API_BASE}/cameras/${camera.id}/settings`);
           if (settingsResponse.ok) {
             const settingsData = await settingsResponse.json();
             const useCase = settingsData.requested?.use_case || 'apriltag';
@@ -173,7 +174,7 @@ const CameraDiscoveryPage: React.FC = () => {
 
   const handleSaveCameraName = async (cameraId: string, position: string, side?: string) => {
     try {
-      const response = await fetch(`/api/cameras/${cameraId}/name`, {
+      const response = await fetch(`${API_BASE}/cameras/${cameraId}/name`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -197,7 +198,7 @@ const CameraDiscoveryPage: React.FC = () => {
 
   const handleUseCaseChange = async (cameraId: string, useCase: string) => {
     try {
-      const response = await fetch(`/api/cameras/${cameraId}/settings`, {
+      const response = await fetch(`${API_BASE}/cameras/${cameraId}/settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

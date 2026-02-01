@@ -1,0 +1,102 @@
+.vp-canvas {
+  flex: 1;
+  min-height: 300px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.vp-canvas-toolbar {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.vp-canvas-hint {
+  font-style: italic;
+}
+
+.vp-canvas-dropzone {
+  flex: 1;
+  overflow: auto;
+  min-height: 300px;
+  background-color: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.vp-canvas-empty-hint-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  padding: 24px;
+}
+
+.vp-canvas-empty-hint {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin: 0;
+}
+
+.vp-canvas-svg {
+  width: 100%;
+  min-height: 400px;
+}
+
+.vp-node {
+  cursor: default;
+}
+
+.vp-node-source rect {
+  fill: rgba(34, 197, 94, 0.15);
+}
+
+.vp-node-sink rect {
+  fill: rgba(156, 163, 175, 0.15);
+}
+
+.vp-port {
+  cursor: pointer;
+  pointer-events: all;
+}
+
+.vp-port:hover {
+  filter: brightness(1.2);
+}
+
+.vp-port-input:hover,
+.vp-port-output:hover {
+  stroke: var(--status-ok);
+  stroke-width: 2;
+}
+
+.vp-edge-path {
+  stroke: var(--status-ok, #22c55e);
+}
+
+.vp-node-label {
+  font-family: inherit;
+}
+
+.vp-node-delete {
+  cursor: pointer;
+}
+
+.vp-node-delete:hover rect {
+  opacity: 1;
+}
+
+.vp-node-selected rect {
+  stroke-width: 2;
+}
+
+.vp-node {
+  cursor: grab;
+}
+
+.vp-node:active {
+  cursor: grabbing;
+}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchCameras, fetchCameraControls } from '../utils/cameraApi';
+import { API_BASE } from '../utils/config';
 import { Camera } from '../types';
 import '../styles/SettingsPage.css';
 
@@ -55,7 +56,7 @@ const SettingsPage: React.FC = () => {
     setMessage(null);
     try {
       // Load saved settings
-      const settingsResponse = await fetch(`/api/cameras/${selectedCameraId}/settings`);
+      const settingsResponse = await fetch(`${API_BASE}/cameras/${selectedCameraId}/settings`);
       if (settingsResponse.ok) {
         const settingsData = await settingsResponse.json();
         setCameraSettings(settingsData.requested || {});
@@ -78,7 +79,7 @@ const SettingsPage: React.FC = () => {
     setSaving(true);
     setMessage(null);
     try {
-      const response = await fetch(`/api/cameras/${selectedCameraId}/settings`, {
+      const response = await fetch(`${API_BASE}/cameras/${selectedCameraId}/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cameraSettings),

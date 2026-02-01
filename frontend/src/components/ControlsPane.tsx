@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchCameraCapabilities, CameraCapabilities, fetchCameraControls, CameraControl } from '../utils/cameraApi';
+import { API_BASE } from '../utils/config';
 import '../styles/ControlsPane.css';
 
 interface ControlsPaneProps {
@@ -104,7 +105,7 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
         
         // Load saved resolution/FPS from settings endpoint
         try {
-          const settingsResponse = await fetch(`/api/cameras/${cameraId}/settings`);
+          const settingsResponse = await fetch(`${API_BASE}/cameras/${cameraId}/settings`);
           if (settingsResponse.ok) {
             const settingsData = await settingsResponse.json();
             const savedRes = settingsData.requested?.resolution;
@@ -144,7 +145,7 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
         // Load saved settings FIRST (before controls) to ensure they're available
         let savedSettings: Record<string, any> = {};
         try {
-          const settingsResponse = await fetch(`/api/cameras/${cameraId}/settings`);
+          const settingsResponse = await fetch(`${API_BASE}/cameras/${cameraId}/settings`);
           if (settingsResponse.ok) {
             const settingsData = await settingsResponse.json();
             savedSettings = settingsData.requested || {};
@@ -221,7 +222,7 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
 
     const pollSettings = async () => {
       try {
-        const response = await fetch(`/api/cameras/${cameraId}/settings`);
+        const response = await fetch(`${API_BASE}/cameras/${cameraId}/settings`);
         if (response.ok) {
           const data = await response.json();
           const actual = data.actual || {};
@@ -259,7 +260,7 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
     const option = resolutionFpsOptions.find(opt => opt.value === value);
     if (option && cameraId) {
       try {
-        await fetch(`/api/cameras/${cameraId}/resolution`, {
+        await fetch(`${API_BASE}/cameras/${cameraId}/resolution`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -296,7 +297,7 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
         const payload: Record<string, any> = {};
         payload[controlId] = value;
 
-        const response = await fetch(`/api/cameras/${cameraId}/controls`, {
+        const response = await fetch(`${API_BASE}/cameras/${cameraId}/controls`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -306,7 +307,7 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
           console.error(`Failed to apply control ${controlName}`);
         } else {
           // Save to settings for persistence (via backend)
-          const settingsResponse = await fetch(`/api/cameras/${cameraId}/settings`, {
+          const settingsResponse = await fetch(`${API_BASE}/cameras/${cameraId}/settings`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ [controlId]: value })
@@ -348,7 +349,7 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
       }
 
       // Apply all defaults
-      const response = await fetch(`/api/cameras/${cameraId}/controls`, {
+      const response = await fetch(`${API_BASE}/cameras/${cameraId}/controls`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -362,7 +363,7 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
       setControlValues(prev => ({ ...prev, ...newValues }));
 
       // Save to settings
-      await fetch(`/api/cameras/${cameraId}/settings`, {
+      await fetch(`${API_BASE}/cameras/${cameraId}/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

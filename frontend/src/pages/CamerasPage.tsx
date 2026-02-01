@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ViewerPane from '../components/ViewerPane';
 import ControlsPane from '../components/ControlsPane';
 import { fetchCameras } from '../utils/cameraApi';
+import { API_BASE } from '../utils/config';
 import { Camera } from '../types';
 import '../styles/CamerasPage.css';
 
@@ -46,18 +47,27 @@ const CamerasPage: React.FC = () => {
     setError(null);
     
     try {
-      const response = await fetch(`/api/cameras/${selectedCameraId}/open`, {
-        method: 'POST'
+      const response = await fetch(`${API_BASE}/cameras/${selectedCameraId}/open`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stream_only: true }),
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to open camera');
+        let detail = 'Failed to open camera';
+        try {
+          const errorData = await response.json();
+          if (errorData && typeof errorData.detail === 'string') detail = errorData.detail;
+        } catch {
+          if (response.statusText) detail = `${detail}: ${response.statusText}`;
+        }
+        throw new Error(detail);
       }
       
       setIsCameraOpen(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to open camera');
+      const msg = err instanceof Error ? err.message : 'Failed to open camera';
+      setError(msg);
       setIsCameraOpen(false);
     } finally {
       setLoading(false);
@@ -78,8 +88,14 @@ const CamerasPage: React.FC = () => {
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to close camera');
+        let detail = 'Failed to close camera';
+        try {
+          const errorData = await response.json();
+          if (errorData && typeof errorData.detail === 'string') detail = errorData.detail;
+        } catch {
+          if (response.statusText) detail = `${detail}: ${response.statusText}`;
+        }
+        throw new Error(detail);
       }
       
       setIsCameraOpen(false);
@@ -106,27 +122,30 @@ const CamerasPage: React.FC = () => {
 
     const checkStatus = async () => {
       try {
-        const response = await fetch(`/api/cameras/${selectedCameraId}/status`);
-        if (response.ok) {
-          const data = await response.json();
-          const wasOpen = isCameraOpen;
-          const isOpen = data.open || false;
-          
-          // Always update, even if same, to ensure state is correct
-          setIsCameraOpen(isOpen);
-          
-          // Debug logging
-          if (wasOpen !== isOpen) {
-            console.log(`Camera ${selectedCameraId} status changed: ${wasOpen} -> ${isOpen}`);
-          } else if (!isOpen) {
-            // Log when camera is still not open (for debugging auto-start detection)
-            console.log(`Camera ${selectedCameraId} status check: open=${isOpen}, response:`, data);
-          }
-        } else {
-          console.warn(`Camera status check failed: ${response.status}`);
+        const response = await fetch(`${API_BASE}/cameras/${selectedCameraId}/status`);
+        if (!response.ok) {
+          setIsCameraOpen(false);
+          return;
+        }
+        let data: { open?: boolean };
+        try {
+          data = await response.json();
+        } catch {
+          setIsCameraOpen(false);
+          return;
+        }
+        const wasOpen = isCameraOpen;
+        const isOpen = data.open === true;
+        setIsCameraOpen(isOpen);
+        if (wasOpen !== isOpen) {
+          console.log(`Camera ${selectedCameraId} status: ${wasOpen} -> ${isOpen}`);
         }
       } catch (err) {
-        console.error('Error checking camera status:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg && msg !== 'Failed to fetch') {
+          console.warn('Camera status check failed:', msg);
+        }
+        setIsCameraOpen(false);
       }
     };
 

@@ -1,6 +1,5 @@
 import { Camera } from '../types';
-
-const API_BASE = '/api';
+import { API_BASE } from './config';
 
 export interface CameraDetails {
   id: string;

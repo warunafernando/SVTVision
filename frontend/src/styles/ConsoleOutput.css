@@ -62,7 +62,36 @@
 .console-filter {
   flex-shrink: 0;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-pause-btn {
+  padding: 4px 10px;
+  background-color: #1e1e1e;
+  border: 1px solid #424242;
+  border-radius: 4px;
+  color: #d4d4d4;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+.console-pause-btn:hover {
+  border-color: #555;
+  background-color: #2d2d2d;
+}
+
+.console-pause-btn.paused {
+  border-color: #cca700;
+  color: #cca700;
+}
+
+.console-paused-label {
+  color: #858585;
+  font-size: 11px;
+  font-style: italic;
 }
 
 .console-filter-select {

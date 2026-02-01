@@ -1,0 +1,20 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-9.0.2, pluggy-1.6.0
+rootdir: /home/svt/FRC/SVTVision
+plugins: anyio-3.7.1
+collected 15 items
+
+backend/tests/test_api_vp.py .....                                       [ 33%]
+backend/tests/test_graph_model.py ..........                             [100%]
+
+=============================== warnings summary ===============================
+backend/tests/test_api_vp.py::test_vp_info_returns_200
+backend/tests/test_api_vp.py::test_vp_stages_returns_empty_list
+backend/tests/test_api_vp.py::test_vp_algorithms_returns_empty_list
+backend/tests/test_api_vp.py::test_vp_validate_valid_graph
+backend/tests/test_api_vp.py::test_vp_validate_invalid_graph
+  /home/svt/FRC/SVTVision/backend/.venv/lib/python3.11/site-packages/httpx/_client.py:690: DeprecationWarning: The 'app' shortcut is now deprecated. Use the explicit style 'transport=WSGITransport(app=...)' instead.
+    warnings.warn(message, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 15 passed, 5 warnings in 0.88s ========================

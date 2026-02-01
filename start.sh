@@ -8,6 +8,12 @@ cd "$SCRIPT_DIR"
 
 echo "Starting SVTVision..."
 
+# Free port 8080 if in use (avoid "address already in use")
+if command -v fuser &>/dev/null; then
+  fuser -k 8080/tcp 2>/dev/null || true
+  sleep 1
+fi
+
 # Check if frontend is built
 if [ ! -d "frontend/dist" ]; then
     echo "Building frontend..."
@@ -29,4 +35,8 @@ fi
 # Start backend (which will serve frontend in prod mode)
 echo "Starting backend server..."
 cd backend
-python3 main.py
+if [ -f ".venv/bin/python" ]; then
+  .venv/bin/python main.py
+else
+  python3 main.py
+fi

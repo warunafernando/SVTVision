@@ -1,5 +1,6 @@
 {
   "app_name": "SVTVision",
   "build_id": "2024.01.20-dev",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "auto_start_cameras": false
 }
