@@ -3,9 +3,10 @@
  * Layout: Palette | Canvas | Properties & Controls / Pipeline Manager
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { VPNode, VPEdge } from '../types';
 import { getStageAlgorithmSchema, getDefaultConfigForAlgorithm } from '../utils/stageAlgorithmSchemas';
+import { fetchPipelineInstances } from '../utils/pipelineApi';
 import Palette from '../components/vp/Palette';
 import PipelineCanvas from '../components/vp/PipelineCanvas';
 import PropertiesAndControlsPanel from '../components/vp/PropertiesAndControlsPanel';
@@ -18,6 +19,25 @@ const VisionPipelinePage: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [algorithmId, setAlgorithmId] = useState<string | null>(null);
   const [algorithmName, setAlgorithmName] = useState('Untitled');
+  const [runningInstanceIds, setRunningInstanceIds] = useState<string[]>([]);
+
+  const refetchRunningInstances = useCallback(async (optimisticId?: string) => {
+    try {
+      const list = await fetchPipelineInstances();
+      let ids = list.filter((i) => i.state === 'running').map((i) => i.id);
+      if (optimisticId && !ids.includes(optimisticId)) ids = [...ids, optimisticId];
+      setRunningInstanceIds(ids);
+    } catch {
+      if (optimisticId) setRunningInstanceIds([optimisticId]);
+      else setRunningInstanceIds([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    refetchRunningInstances();
+    const interval = setInterval(() => refetchRunningInstances(), 2000);
+    return () => clearInterval(interval);
+  }, [refetchRunningInstances]);
 
   const handleGraphChange = useCallback(
     (newNodes: VPNode[], newEdges: VPEdge[], newLayout: Record<string, { x: number; y: number }>) => {
@@ -89,6 +109,7 @@ const VisionPipelinePage: React.FC = () => {
           edges={edges}
           layout={layout}
           selectedNodeId={selectedNodeId}
+          runningInstanceIds={runningInstanceIds}
           onGraphChange={handleGraphChange}
           onNodeSelect={handleNodeSelect}
         />
@@ -99,12 +120,22 @@ const VisionPipelinePage: React.FC = () => {
           layout={layout}
           algorithmId={algorithmId}
           algorithmName={algorithmName}
+          runningInstanceIds={runningInstanceIds}
           onNodeConfigChange={handleNodeConfigChange}
           onNodeAlgorithmChange={handleNodeAlgorithmChange}
           onGraphLoad={handleGraphLoad}
           onAlgorithmIdChange={(id, name) => {
             setAlgorithmId(id);
             if (name) setAlgorithmName(name);
+          }}
+          onPipelineStarted={(instanceId) => {
+            console.log('[Vision Pipeline] onPipelineStarted', { instanceId });
+            setRunningInstanceIds((prev) => {
+              const next = prev.includes(instanceId) ? prev : [...prev, instanceId];
+              console.log('[Vision Pipeline] setRunningInstanceIds (optimistic)', { instanceId, next });
+              return next;
+            });
+            refetchRunningInstances(instanceId);
           }}
         />
       </div>

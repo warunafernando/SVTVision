@@ -153,3 +153,26 @@ def test_build_with_save_video_and_save_image(logger, tmp_path):
     assert "si1" in sink_ids
     for s in save_sinks:
         s.close()
+
+
+def test_build_source_to_stream_tap_only(logger):
+    """Build pipeline with only CameraSource → StreamTap (no SVTVisionOutput, no stages)."""
+    nodes = [
+        _node("n1", "source", source_type="camera"),
+        _node("tap1", "sink", sink_type="stream_tap"),
+    ]
+    edges = [_edge("e1", "n1", "frame", "tap1", "frame")]
+    plan = compile_graph(nodes, edges)
+    result = build_pipeline_with_taps(plan, nodes, logger)
+    assert result is not None
+    pipeline, stream_taps, save_sinks = result
+    assert len(stream_taps) == 1
+    assert stream_taps[0].tap_id == "tap1"
+    assert stream_taps[0].attach_point == "n1"
+    assert len(save_sinks) == 0
+    # Pipeline has no stages but has __source__ taps; process_frame should push raw to tap
+    import numpy as np
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    out = pipeline.process_frame(frame)
+    assert "raw" in out
+    assert stream_taps[0].get_jpeg() is not None

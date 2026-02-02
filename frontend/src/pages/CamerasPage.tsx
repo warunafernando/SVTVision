@@ -37,6 +37,19 @@ const CamerasPage: React.FC = () => {
     }
   };
 
+  const openOneCamera = async (cameraId: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE}/cameras/${cameraId}/open`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  };
+
   const handleCameraOpen = async () => {
     if (!selectedCameraId) {
       setError('No camera selected');
@@ -50,7 +63,7 @@ const CamerasPage: React.FC = () => {
       const response = await fetch(`${API_BASE}/cameras/${selectedCameraId}/open`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stream_only: true }),
+        body: JSON.stringify({}),
       });
       
       if (!response.ok) {
@@ -74,6 +87,29 @@ const CamerasPage: React.FC = () => {
     }
   };
 
+  const handleOpenAllCameras = async () => {
+    if (cameras.length === 0) {
+      setError('No cameras to open');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    const results = await Promise.all(cameras.map((c) => openOneCamera(c.id)));
+    const opened = results.filter(Boolean).length;
+    const failed = cameras.length - opened;
+    if (failed > 0) {
+      setError(`Opened ${opened}/${cameras.length} cameras. ${failed} failed (may need saved resolution).`);
+    } else {
+      setError(null);
+    }
+    setLoading(false);
+    loadCameras();
+    const selIdx = cameras.findIndex((c) => c.id === selectedCameraId);
+    if (selectedCameraId && selIdx >= 0 && results[selIdx]) {
+      setIsCameraOpen(true);
+    }
+  };
+
   const handleCameraClose = async () => {
     if (!selectedCameraId) {
       return;
@@ -83,8 +119,9 @@ const CamerasPage: React.FC = () => {
     setError(null);
     
     try {
-      const response = await fetch(`/api/cameras/${selectedCameraId}/close`, {
-        method: 'POST'
+      const response = await fetch(`${API_BASE}/cameras/${selectedCameraId}/close`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
       });
       
       if (!response.ok) {
@@ -162,6 +199,16 @@ const CamerasPage: React.FC = () => {
           {error}
         </div>
       )}
+      <div className="cameras-toolbar">
+        <button
+          type="button"
+          className="cameras-toolbar-button"
+          onClick={handleOpenAllCameras}
+          disabled={loading || cameras.length === 0}
+        >
+          {loading ? '...' : 'Open all cameras'}
+        </button>
+      </div>
       <div className="cameras-main-content">
         <ViewerPane
           cameras={cameras}

@@ -107,7 +107,7 @@ def test_vp_compile_returns_plan(client: TestClient):
 
 
 def test_vp_compile_rejects_missing_svt_output(client: TestClient):
-    """POST /api/vp/compile returns valid=False when no SVTVisionOutput."""
+    """POST /api/vp/compile: no SVTVisionOutput is allowed if graph has source→StreamTap (side-tap-only)."""
     response = client.post(
         "/api/vp/compile",
         json={
@@ -122,8 +122,11 @@ def test_vp_compile_rejects_missing_svt_output(client: TestClient):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["valid"] is False
-    assert len(data["errors"]) > 0
+    assert data["valid"] is True
+    plan = data["plan"]
+    assert plan["main_path"] == ["n1"]
+    assert len(plan["side_taps"]) == 1
+    assert plan["side_taps"][0]["sink_type"] == "stream_tap"
 
 
 def test_vp_validate_rejects_multiple_inputs_same_port(client: TestClient):

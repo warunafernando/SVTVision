@@ -138,28 +138,38 @@ def compile_graph(
     # 1. Validate
     validate_graph(graph)
 
-    # 2. Find source and SVTVisionOutput
+    # 2. Find source and SVTVisionOutput (or allow StreamTap-only)
     sources = graph.get_sources()
     if not sources:
         raise GraphValidationError("No source node found", ["Graph must have exactly one source"])
     source = sources[0]
 
     svt_sink = _find_svt_output(graph)
-    if svt_sink is None:
-        raise GraphValidationError(
-            "No SVTVisionOutput sink found",
-            ["Graph must have an SVTVisionOutput sink (required terminal)"],
-        )
-
-    # 3. Find main path (source → ... → svt_output)
     outgoing = _outgoing_edges(graph)
-    path = _find_path_dfs(graph, source.id, svt_sink.id, outgoing, set(), [])
-    if path is None:
-        raise GraphValidationError(
-            "No path from source to SVTVisionOutput",
-            ["SVTVisionOutput must be reachable from the source node"],
-        )
-    main_path = path
+
+    if svt_sink is not None:
+        # 3a. Main path: source → ... → SVTVisionOutput
+        path = _find_path_dfs(graph, source.id, svt_sink.id, outgoing, set(), [])
+        if path is None:
+            raise GraphValidationError(
+                "No path from source to SVTVisionOutput",
+                ["SVTVisionOutput must be reachable from the source node"],
+            )
+        main_path = path
+    else:
+        # 3b. No SVTVisionOutput: allow graph if it has side taps from source (e.g. CameraSource → StreamTap only)
+        side_taps_from_source = [
+            e for e in graph.edges
+            if e.source_node == source.id
+            and graph.get_node(e.target_node) is not None
+            and getattr(graph.get_node(e.target_node), "sink_type", None) in SIDE_TAP_SINK_TYPES
+        ]
+        if not side_taps_from_source:
+            raise GraphValidationError(
+                "No SVTVisionOutput sink found",
+                ["Graph must have an SVTVisionOutput sink or at least one StreamTap/SaveVideo/SaveImage from the source"],
+            )
+        main_path = [source.id]
 
     main_path_set: Set[str] = set(main_path)
 

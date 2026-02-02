@@ -106,7 +106,9 @@ class VisionPipeline:
         stream_taps: Optional[Dict[str, List[Any]]] = None,
     ):
         self.logger = logger
-        self._stages: List[PipelineStagePort] = stages or _default_stages(preprocessor, tag_detector)
+        self._stages: List[PipelineStagePort] = (
+            stages if stages is not None else _default_stages(preprocessor, tag_detector)
+        )
         self._stage_frames: Dict[str, deque] = {}
         for s in self._stages:
             self._stage_frames[s.name] = deque(maxlen=3)
@@ -139,6 +141,14 @@ class VisionPipeline:
         try:
             raw_stage = StageFrame("raw", raw_frame)
             self.raw_frames.append(raw_stage)
+
+            # Stage 7: Push raw frame to taps attached to source (CameraSource → StreamTap only)
+            for tap in self._stream_taps.get("__source__", []):
+                try:
+                    tap.push_frame(raw_frame)
+                except Exception as e:
+                    self.logger.warning(f"[Pipeline] StreamTap __source__ dispatch error: {e}")
+
             if len(raw_frame.shape) == 3:
                 gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
             else:

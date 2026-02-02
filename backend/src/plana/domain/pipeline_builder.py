@@ -100,20 +100,22 @@ def build_pipeline_with_taps(
             logger.warning(f"[PipelineBuilder] Unknown stage_id: {stage_id}, skipping")
             return None
 
-    if not stages:
-        logger.warning("[PipelineBuilder] No stages built")
-        return None
-
     # Stage 7 & 8: Create StreamTaps and SaveVideo/SaveImage sinks for side taps
     stream_taps: List[StreamTap] = []
     save_sinks: List[Union[SaveVideoSink, SaveImageSink]] = []
     side_taps_by_stage: Dict[str, List[Any]] = {}  # Any = StreamTap | SaveVideoSink | SaveImageSink (push_frame)
 
+    main_path_set = set(plan.main_path)
+
     for side_tap in plan.side_taps:
         attach_stage = node_id_to_stage_name.get(side_tap.attach_point)
         if not attach_stage:
-            logger.warning(f"[PipelineBuilder] Side tap attach_point {side_tap.attach_point} not found in stages")
-            continue
+            # Attach point may be the source node (no stage): use special key for raw frame taps
+            if side_tap.attach_point in main_path_set:
+                attach_stage = "__source__"
+            else:
+                logger.warning(f"[PipelineBuilder] Side tap attach_point {side_tap.attach_point} not found in stages")
+                continue
         if attach_stage not in side_taps_by_stage:
             side_taps_by_stage[attach_stage] = []
 
@@ -150,6 +152,11 @@ def build_pipeline_with_taps(
             save_sinks.append(sink)
             side_taps_by_stage[attach_stage].append(sink)
             logger.info(f"[PipelineBuilder] Created SaveImageSink {sink.sink_id} -> {path}")
+
+    # Allow zero stages when graph is source → StreamTap only (we have __source__ taps)
+    if not stages and "__source__" not in side_taps_by_stage:
+        logger.warning("[PipelineBuilder] No stages and no source taps built")
+        return None
 
     pipeline = VisionPipeline.from_stages(stages, logger, stream_taps=side_taps_by_stage)
     return (pipeline, stream_taps, save_sinks)

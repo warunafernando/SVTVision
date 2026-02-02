@@ -356,7 +356,7 @@ class SelfTestRunner:
                 }
             }
         
-        # Test first camera with apriltag use_case
+        # Test first camera (opens stream_only; no vision pipeline by default)
         test_camera = cameras[0]
         camera_id = test_camera["id"]
         device_path = test_camera.get("device_path")
@@ -369,7 +369,7 @@ class SelfTestRunner:
             }
         
         try:
-            # Open camera (will use apriltag pipeline if use_case is 'apriltag')
+            # Open camera (stream_only; vision pipeline only when started from Vision Pipeline page)
             opened = self.camera_service.open_camera(camera_id, device_path)
             if not opened:
                 return {

@@ -24,12 +24,13 @@ def main():
     # Start application
     app = orchestrator.start()
     
-    # Run server
+    # Run server (single worker so pipeline instances and camera managers stay in same process)
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=8080,
-        log_level="info"
+        log_level="info",
+        workers=1,
     )
 
 

@@ -3,7 +3,7 @@
  * Node properties, pipeline controls, load/save, running instances
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { VPNode, VPEdge } from '../../types';
 import { validateGraph } from '../../utils/vpApi';
 import {
@@ -42,6 +42,10 @@ interface PropertiesAndControlsPanelProps {
   onNodeAlgorithmChange?: (nodeId: string, stageId: string, config: Record<string, unknown>) => void;
   onGraphLoad?: (nodes: VPNode[], edges: VPEdge[], layout: Record<string, { x: number; y: number }>, name: string) => void;
   onAlgorithmIdChange?: (id: string | null, name?: string) => void;
+  /** Page's running instance ids (from refetch + optimistic); merged into display so panel shows instance even when API returns []. */
+  runningInstanceIds?: string[];
+  /** Called after a pipeline is successfully started with the new instance id. */
+  onPipelineStarted?: (instanceId: string) => void;
 }
 
 const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
@@ -55,32 +59,50 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
   onNodeAlgorithmChange,
   onGraphLoad,
   onAlgorithmIdChange,
+  runningInstanceIds = [],
+  onPipelineStarted,
 }) => {
   const [validateStatus, setValidateStatus] = useState<{ valid?: boolean; errors?: string[] } | null>(null);
   const [saveName, setSaveName] = useState(algorithmName || 'Untitled');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [instances, setInstances] = useState<PipelineInstance[]>([]);
   const [algorithms, setAlgorithms] = useState<AlgorithmMeta[]>([]);
   const [streamTapViewerInstanceId, setStreamTapViewerInstanceId] = useState<string | null>(null);
+  const [selectedRunCameraId, setSelectedRunCameraId] = useState<string>('');
 
   const loadCameras = async () => {
     try {
       const list = await fetchCameras();
       setCameras(list);
-    } catch {
+      setSelectedRunCameraId((prev) => {
+        if (!prev && list.length > 0) return list[0].id;
+        if (prev && !list.some((c) => c.id === prev)) return list[0]?.id ?? '';
+        return prev;
+      });
+    } catch (e) {
       setCameras([]);
+      console.warn('[Vision Pipeline] Load cameras failed', e);
     }
   };
 
-  const loadInstances = async () => {
+  const loadInstances = async (optimistic?: { id: string; algorithm_id: string; target: string }) => {
     try {
       const list = await fetchPipelineInstances();
-      setInstances(list);
-    } catch {
-      setInstances([]);
+      if (list.length > 0) {
+        setInstances(list);
+      } else if (optimistic) {
+        setInstances([{ ...optimistic, state: 'running' as const }]);
+      } else {
+        setInstances([]);
+      }
+    } catch (e) {
+      if (optimistic) setInstances([{ ...optimistic, state: 'running' as const }]);
+      else setInstances([]);
+      console.warn('[Vision Pipeline] Load instances failed', e);
     }
   };
 
@@ -88,8 +110,9 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
     try {
       const list = await fetchAlgorithms();
       setAlgorithms(list);
-    } catch {
+    } catch (e) {
       setAlgorithms([]);
+      console.warn('[Vision Pipeline] Load algorithms failed', e);
     }
   };
 
@@ -120,7 +143,9 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
       const result = await validateGraph(nodes, edges);
       setValidateStatus({ valid: result.valid, errors: result.errors || [] });
     } catch (err) {
-      setValidateStatus({ valid: false, errors: [err instanceof Error ? err.message : 'Validation failed'] });
+      const msg = err instanceof Error ? err.message : 'Validation failed';
+      setValidateStatus({ valid: false, errors: [msg] });
+      console.error('[Vision Pipeline] Validate failed', msg, err);
     } finally {
       setLoading(false);
     }
@@ -129,6 +154,7 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
   const handleSaveAlgorithm = async () => {
     setLoading(true);
     setSaveError(null);
+    setRunError(null);
     setSaveSuccess(false);
     try {
       // Merge default algorithm config into stage nodes so variables are saved per algorithm
@@ -187,14 +213,20 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
 
   const handleRunPipeline = async () => {
     if (!algorithmId) return;
-    const cam = cameras[0]?.id;
+    const cam = selectedRunCameraId || cameras[0]?.id;
     if (!cam) return;
     setLoading(true);
+    setRunError(null);
     try {
-      await startPipeline(algorithmId, cam);
-      loadInstances();
-    } catch {
-      // ignore
+      console.log('[Vision Pipeline] Run started', { algorithmId, camera: cam });
+      const result = await startPipeline(algorithmId, cam);
+      loadInstances(result?.id ? { id: result.id, algorithm_id: algorithmId, target: cam } : undefined);
+      if (result?.id) onPipelineStarted?.(result.id);
+      console.log('[Vision Pipeline] Run succeeded', { algorithmId, camera: cam, instanceId: result?.id });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to start pipeline';
+      setRunError(msg);
+      console.error('[Vision Pipeline] Run failed', msg, err);
     } finally {
       setLoading(false);
     }
@@ -212,6 +244,15 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
 
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
 
+  // Merge API instances with page's runningInstanceIds so we show the just-started instance even when GET returns []
+  const displayInstances = useMemo(() => {
+    const byId = new Map(instances.map((i) => [i.id, i]));
+    for (const id of runningInstanceIds) {
+      if (!byId.has(id)) byId.set(id, { id, algorithm_id: 'pipeline', target: id, state: 'running' as const });
+    }
+    return [...byId.values()];
+  }, [instances, runningInstanceIds]);
+
   const handleDeletePipeline = async (id: string) => {
     if (!id) return;
     if (!window.confirm(`Delete pipeline "${algorithms.find((a) => a.id === id)?.name ?? id}"?`)) return;
@@ -226,8 +267,11 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
         setSaveName('Untitled');
       }
       setSelectedPipelineId('');
+      console.log('[Vision Pipeline] Delete succeeded', { id });
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Delete failed');
+      const msg = err instanceof Error ? err.message : 'Delete failed';
+      setSaveError(msg);
+      console.error('[Vision Pipeline] Delete failed', msg, err);
     } finally {
       setLoading(false);
     }
@@ -387,14 +431,37 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
             {validateStatus.valid ? 'Valid' : (validateStatus.errors || []).join(', ')}
           </div>
         )}
-        <button
-          type="button"
-          className="vp-props-btn vp-props-btn-primary"
-          onClick={handleRunPipeline}
-          disabled={loading || !algorithmId || !cameras.length}
-        >
-          Run Pipeline
-        </button>
+        <div className="vp-props-run-row">
+          <select
+            className="vp-props-select vp-props-run-camera"
+            value={selectedRunCameraId}
+            onChange={(e) => setSelectedRunCameraId(e.target.value)}
+            disabled={loading || cameras.length === 0}
+            title="Camera to run pipeline on"
+          >
+            <option value="">Select camera...</option>
+            {cameras.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.custom_name || c.name || c.id}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="vp-props-btn vp-props-btn-primary"
+            onClick={handleRunPipeline}
+            disabled={loading || !algorithmId || !cameras.length || !selectedRunCameraId}
+          >
+            Run Pipeline
+          </button>
+        </div>
+        {!algorithmId && (
+          <p className="vp-props-hint">Save the pipeline first (name + Save Algorithm), then Run Pipeline.</p>
+        )}
+        {algorithmId && !cameras.length && (
+          <p className="vp-props-hint">No cameras available. Add or connect a camera from the Cameras page.</p>
+        )}
+        {runError && <div className="vp-props-error">{runError}</div>}
         <div className="vp-props-save-row">
           <input
             type="text"
@@ -469,17 +536,14 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
       {/* Running Pipelines */}
       <div className="vp-props-section">
         <h4 className="vp-props-section-title">Running Pipelines</h4>
-        {instances.length === 0 ? (
+        {displayInstances.length === 0 ? (
           <p className="vp-props-empty">No pipelines running</p>
         ) : (
           <ul className="vp-props-instance-list">
-            {instances.map((inst) => (
+            {displayInstances.map((inst) => (
               <li key={inst.id} className="vp-props-instance-item">
                 <span className="vp-props-instance-name">
                   {inst.algorithm_id} → {inst.target}
-                </span>
-                <span className={`vp-props-instance-status vp-props-instance-status-${inst.state}`}>
-                  {inst.state}
                 </span>
                 <button
                   type="button"
@@ -492,11 +556,13 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
                 </button>
                 <button
                   type="button"
-                  className="vp-props-btn vp-props-btn-small vp-props-btn-danger"
+                  className="vp-props-btn vp-props-btn-small vp-props-btn-close"
                   onClick={() => handleStop(inst.id)}
                   disabled={loading}
+                  title="Close pipeline"
+                  aria-label="Close pipeline"
                 >
-                  Stop
+                  ×
                 </button>
               </li>
             ))}

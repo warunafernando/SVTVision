@@ -1,0 +1,64 @@
+{
+  "name": "direct_video",
+  "description": "",
+  "nodes": [
+    {
+      "id": "n_7y869o4",
+      "type": "source",
+      "source_type": "camera",
+      "name": "CameraSource",
+      "ports": {
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      },
+      "config": {
+        "camera_id": "usb-Arducam_202500915_0001-8-1"
+      }
+    },
+    {
+      "id": "n_m22yif2",
+      "type": "sink",
+      "sink_type": "stream_tap",
+      "name": "StreamTap",
+      "ports": {
+        "inputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_qlco7ws",
+      "source_node": "n_7y869o4",
+      "source_port": "frame",
+      "target_node": "n_m22yif2",
+      "target_port": "frame"
+    }
+  ],
+  "layout": {
+    "n_7y869o4": {
+      "x": 97.103759765625,
+      "y": 0
+    },
+    "n_m22yif2": {
+      "x": 301.2242126464844,
+      "y": 7.129947662353516
+    }
+  },
+  "updated_at": "2026-02-02T01:03:16.212779Z"
+}

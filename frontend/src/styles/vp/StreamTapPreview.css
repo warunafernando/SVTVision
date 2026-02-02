@@ -1,0 +1,70 @@
+/* Inline StreamTap preview: 2x width (320px), 4x height (480px) */
+.vp-streamtap-preview {
+  display: flex;
+  flex-direction: column;
+  background: #1a1a1a;
+  border: 1px solid var(--border, #333);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.vp-streamtap-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #2d2d2d;
+  border-bottom: 1px solid var(--border, #333);
+  font-size: 11px;
+}
+
+.vp-streamtap-preview-title {
+  color: var(--text-secondary, #858585);
+  font-weight: 600;
+}
+
+.vp-streamtap-preview-status {
+  color: var(--text-secondary, #858585);
+  font-size: 10px;
+}
+
+.vp-streamtap-preview-status.connected {
+  color: #4ec9b0;
+}
+
+.vp-streamtap-preview-select {
+  margin: 4px 8px 0;
+  padding: 2px 6px;
+  font-size: 11px;
+  background: #2d2d2d;
+  border: 1px solid #424242;
+  border-radius: 4px;
+  color: #d4d4d4;
+  max-width: 100%;
+}
+
+.vp-streamtap-preview-video {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.vp-streamtap-preview-video img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.vp-streamtap-preview-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555;
+  font-size: 11px;
+  background: #1a1a1a;
+}

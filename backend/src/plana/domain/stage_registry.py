@@ -59,7 +59,7 @@ def _default_stages() -> List[Dict[str, Any]]:
 
 
 def _default_sources() -> List[Dict[str, Any]]:
-    """Built-in source definitions."""
+    """Built-in source definitions. CameraSource: config.camera_id = which already-open camera to pull frames from (Phase 3)."""
     return [
         {"id": "camera", "name": "CameraSource", "type": "source", "source_type": "camera", "ports": {"inputs": [], "outputs": [{"name": "frame", "type": "frame"}]}},
         {"id": "video_file", "name": "VideoFileSource", "type": "source", "source_type": "video_file", "ports": {"inputs": [], "outputs": [{"name": "frame", "type": "frame"}]}},

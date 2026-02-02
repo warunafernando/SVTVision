@@ -144,6 +144,35 @@
   color: var(--status-error);
 }
 
+.vp-props-btn-close {
+  min-width: 24px;
+  padding: 2px 6px;
+  font-size: 16px;
+  line-height: 1;
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+.vp-props-btn-close:hover {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+
+.vp-props-run-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.vp-props-run-row .vp-props-run-camera {
+  flex: 1;
+  min-width: 0;
+}
+
+.vp-props-run-row .vp-props-btn-primary {
+  flex-shrink: 0;
+}
+
 .vp-props-save-row {
   display: flex;
   gap: 6px;
@@ -158,6 +187,12 @@
   border-radius: 4px;
   background-color: var(--bg-tertiary);
   color: var(--text-primary);
+}
+
+.vp-props-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 6px 0 0 0;
 }
 
 .vp-props-error {

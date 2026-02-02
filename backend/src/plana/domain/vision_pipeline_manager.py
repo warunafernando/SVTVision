@@ -28,96 +28,138 @@ class VisionPipelineManager:
         self.logger = logger
         self.stream_tap_registry = stream_tap_registry or StreamTapRegistry()
         self._instances: Dict[str, PipelineInstance] = {}
+        self._save_sinks: Dict[str, List[Any]] = {}  # instance_id -> [SaveVideoSink, SaveImageSink, ...]
         self.logger.info("[VisionPipelineManager] Initialized")
 
     def list_instances(self) -> List[Dict[str, Any]]:
-        """List all pipeline instances (cameras running AprilTag pipeline)."""
+        """List all pipeline instances (cameras running with vision pipeline)."""
         result = []
-        for camera_id, manager in self.camera_service.get_all_camera_managers().items():
-            if manager.is_open() and hasattr(manager, "vision_pipeline") and manager.vision_pipeline:
+        seen_ids = set()
+        managers = self.camera_service.get_all_camera_managers()
+        self.logger.info(f"[VisionPipelineManager] list_instances: {len(managers)} manager(s), _instances keys={list(self._instances.keys())}")
+        for camera_id, manager in managers.items():
+            is_open = manager.is_open()
+            vp = getattr(manager, "vision_pipeline", None)
+            has_vp = vp is not None
+            vp_truthy = bool(vp)
+            self.logger.info(
+                f"[VisionPipelineManager] list_instances manager {camera_id}: is_open={is_open} has_vision_pipeline={has_vp} vision_pipeline_truthy={vp_truthy}"
+            )
+            if is_open and has_vp and vp:
                 inst = self._instances.get(
                     camera_id,
-                    PipelineInstance(camera_id, "apriltag_cpu", camera_id, "running", manager.vision_pipeline),
+                    PipelineInstance(camera_id, "vision_pipeline", camera_id, "running", manager.vision_pipeline),
                 )
                 metrics = manager.get_metrics() if manager else {}
                 result.append(inst.to_dict(metrics=metrics))
+                seen_ids.add(camera_id)
+        for inst_id, inst in self._instances.items():
+            if inst.state == "running" and inst_id not in seen_ids:
+                self.logger.info(f"[VisionPipelineManager] list_instances: adding from _instances (not in managers) inst_id={inst_id}")
+                result.append(inst.to_dict())
+                seen_ids.add(inst_id)
+        self.logger.info(f"[VisionPipelineManager] list_instances: returning {len(result)} instance(s) ids={[r['id'] for r in result]}")
         return result
 
-    def start(self, algorithm_id: str, target: str) -> Optional[str]:
+    def _camera_id_from_graph(self, algo: Dict[str, Any]) -> Optional[str]:
+        """Phase 3: Get camera_id from the graph's CameraSource node config (pull from already-open camera)."""
+        nodes = algo.get("nodes") or []
+        for n in nodes:
+            if n.get("type") == "source" and n.get("source_type") == "camera":
+                cfg = n.get("config") or {}
+                cid = cfg.get("camera_id") or ""
+                if cid and isinstance(cid, str):
+                    return cid.strip()
+        return None
+
+    def start(self, algorithm_id: str, target: str) -> tuple[Optional[str], Optional[str]]:
         """
-        Start a pipeline instance.
-        Stage 6: loads algorithm from store, compiles to plan, builds pipeline, opens camera.
-        Falls back to default AprilTag pipeline if algorithm not found or build fails.
-        Returns instance id (camera_id) or None on failure.
+        Start a pipeline instance by attaching to an already-open camera (Phase 2).
+        Camera source in the graph pulls frames from that already-open camera (Phase 3).
+        Does not open or close the camera. Camera must be open first (Cameras page or auto_start).
+        Returns (instance_id, None) on success or (None, error_message) on failure.
         """
-        camera_id = target
+        algo = self.algorithm_store.get(algorithm_id)
+        if not algo or not algo.get("nodes") or not algo.get("edges"):
+            self.logger.error(f"[VisionPipelineManager] Algorithm {algorithm_id} not found or empty")
+            return None, "Algorithm not found. Save the pipeline first (Save Algorithm), then Run."
+
+        # Phase 3: resolve camera from graph CameraSource config, else use Run target
+        source_camera_id = self._camera_id_from_graph(algo)
+        camera_id = source_camera_id if source_camera_id else target
+        self.logger.info(f"[VisionPipelineManager] start: camera_id from graph={source_camera_id!r}, target={target!r}, using={camera_id!r}")
+
+        # Phase 2: require camera already open
+        if not self.camera_service.is_camera_open(camera_id):
+            self.logger.error(f"[VisionPipelineManager] Camera {camera_id} not open")
+            return None, "Open the camera first. Use the Cameras page to open the camera, or ensure auto_start_cameras and camera config."
+
         camera_details = self.camera_discovery.get_camera_details(camera_id)
         if not camera_details:
             self.logger.error(f"[VisionPipelineManager] Camera {camera_id} not found")
-            return None
-
-        device_path = camera_details.get("device_path")
-        if not device_path:
-            self.logger.error(f"[VisionPipelineManager] Camera {camera_id} has no device_path")
-            return None
-
-        vision_pipeline = None
-        stream_taps: List[StreamTap] = []
-        save_sinks: List[Any] = []
-        algo = self.algorithm_store.get(algorithm_id)
-        if algo and algo.get("nodes") and algo.get("edges"):
-            try:
-                plan = compile_graph(algo["nodes"], algo["edges"])
-                result = build_pipeline_with_taps(plan, algo["nodes"], self.logger)
-                if result:
-                    vision_pipeline, stream_taps, save_sinks = result
-            except GraphValidationError as e:
-                self.logger.warning(f"[VisionPipelineManager] Algorithm {algorithm_id} invalid: {e}")
-            except Exception as e:
-                self.logger.warning(f"[VisionPipelineManager] Build failed for {algorithm_id}: {e}")
+            return None, f"Camera {camera_id} not found. Ensure the camera is connected and discoverable."
 
         try:
-            success = self.camera_service.open_camera(
-                camera_id, device_path, vision_pipeline=vision_pipeline
-            )
-            if success:
-                manager = self.camera_service.get_camera_manager(camera_id)
-                vision_pipeline = manager.vision_pipeline if manager and hasattr(manager, "vision_pipeline") else None
-                inst = PipelineInstance(
-                    instance_id=camera_id,
-                    algorithm_id=algorithm_id,
-                    target=camera_id,
-                    state="running",
-                    vision_pipeline=vision_pipeline,
-                )
-                self._instances[camera_id] = inst
-                # Stage 7: Register StreamTaps
-                for tap in stream_taps:
-                    self.stream_tap_registry.register_tap(camera_id, tap)
-                    self.logger.info(f"[VisionPipelineManager] Registered StreamTap {tap.tap_id} for {camera_id}")
-                self.logger.info(f"[VisionPipelineManager] Started pipeline for camera {camera_id}")
-                return camera_id
+            plan = compile_graph(algo["nodes"], algo["edges"])
+            result = build_pipeline_with_taps(plan, algo["nodes"], self.logger)
+        except GraphValidationError as e:
+            self.logger.warning(f"[VisionPipelineManager] Algorithm {algorithm_id} invalid: {e}")
+            return None, f"Invalid pipeline graph: {e}"
         except Exception as e:
-            self.logger.error(f"[VisionPipelineManager] Failed to start pipeline for {camera_id}: {e}")
-        return None
+            self.logger.warning(f"[VisionPipelineManager] Build failed for {algorithm_id}: {e}")
+            return None, f"Pipeline build failed: {e}"
+
+        if not result:
+            return None, "Pipeline build produced no pipeline. Check graph connections."
+        vision_pipeline, stream_taps, save_sinks = result
+
+        manager = self.camera_service.get_camera_manager(camera_id)
+        if not manager:
+            return None, "Camera manager not available."
+
+        # Phase 2: attach pipeline to already-open camera (no open_camera)
+        manager.vision_pipeline = vision_pipeline
+        manager.use_case = "vision_pipeline"
+        self.logger.info(f"[VisionPipelineManager] Attached pipeline to camera {camera_id}")
+
+        inst = PipelineInstance(
+            instance_id=camera_id,
+            algorithm_id=algorithm_id,
+            target=camera_id,
+            state="running",
+            vision_pipeline=vision_pipeline,
+        )
+        self._instances[camera_id] = inst
+        for tap in stream_taps:
+            self.stream_tap_registry.register_tap(camera_id, tap)
+            self.logger.info(f"[VisionPipelineManager] Registered StreamTap {tap.tap_id} for {camera_id}")
+        self._save_sinks[camera_id] = save_sinks
+        self.logger.info(f"[VisionPipelineManager] Started pipeline for camera {camera_id} (attach only)")
+        return camera_id, None
 
     def stop(self, instance_id: str) -> bool:
-        """Stop a pipeline instance."""
-        success = self.camera_service.close_camera(instance_id)
-        if success:
-            if instance_id in self._instances:
-                self._instances[instance_id].state = "stopped"
-                self._instances[instance_id].set_vision_pipeline(None)
-            # Stage 7: Unregister StreamTaps
-            self.stream_tap_registry.unregister_instance(instance_id)
-            # Stage 8: Close SaveVideo/SaveImage sinks
-            for sink in self._save_sinks.pop(instance_id, []):
-                try:
-                    sink.close()
-                except Exception as e:
-                    self.logger.warning(f"[VisionPipelineManager] Save sink close error: {e}")
-            self.logger.info(f"[VisionPipelineManager] Stopped pipeline {instance_id}")
-        return success
+        """Stop a pipeline instance by detaching only. Camera remains open (Phase 2)."""
+        if instance_id in self._instances:
+            self._instances[instance_id].state = "stopped"
+            self._instances[instance_id].set_vision_pipeline(None)
+        # Detach pipeline from manager; camera stays open
+        manager = self.camera_service.get_camera_manager(instance_id)
+        if manager:
+            manager.vision_pipeline = None
+            # Restore use_case from config (e.g. apriltag or stream_only)
+            cfg = self.camera_service.camera_config_service.get_camera_config(instance_id) or {}
+            manager.use_case = cfg.get("use_case", "stream_only")
+            self.logger.info(f"[VisionPipelineManager] Restored camera {instance_id} use_case={manager.use_case}")
+        # Stage 7: Unregister StreamTaps
+        self.stream_tap_registry.unregister_instance(instance_id)
+        # Stage 8: Close SaveVideo/SaveImage sinks
+        for sink in self._save_sinks.pop(instance_id, []):
+            try:
+                sink.close()
+            except Exception as e:
+                self.logger.warning(f"[VisionPipelineManager] Save sink close error: {e}")
+        self.logger.info(f"[VisionPipelineManager] Stopped pipeline {instance_id} (detach only, camera stays open)")
+        return True
 
     def get_instance(self, instance_id: str) -> Optional[Dict[str, Any]]:
         """Get pipeline instance status/details."""
@@ -128,7 +170,7 @@ class VisionPipelineManager:
             return None
         inst = self._instances.get(
             instance_id,
-            PipelineInstance(instance_id, "apriltag_cpu", instance_id, "running", manager.vision_pipeline),
+            PipelineInstance(instance_id, "vision_pipeline", instance_id, "running", manager.vision_pipeline),
         )
         metrics = manager.get_metrics() if manager else {}
         return inst.to_dict(metrics=metrics)

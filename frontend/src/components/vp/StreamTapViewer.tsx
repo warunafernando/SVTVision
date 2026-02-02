@@ -67,7 +67,11 @@ const StreamTapViewer: React.FC<StreamTapViewerProps> = ({ instanceId, onClose }
         // ignore
       }
     };
-    ws.onerror = () => setError('WebSocket error');
+    ws.onerror = () => {
+      const msg = 'WebSocket error';
+      setError(msg);
+      console.error('[Vision Pipeline] StreamTap WebSocket error', msg);
+    };
     ws.onclose = () => setConnected(false);
 
     return () => {

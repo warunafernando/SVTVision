@@ -222,6 +222,7 @@ class WebServerAdapter:
         @self.app.get("/api/pipelines")
         async def get_pipelines() -> Dict[str, Any]:
             instances = self.vision_pipeline_manager.list_instances()
+            self.logger.info(f"[WebServer] GET /api/pipelines returning {len(instances)} instance(s)")
             return {"instances": instances}
 
         @self.app.get("/api/pipelines/{instance_id}")
@@ -233,13 +234,19 @@ class WebServerAdapter:
 
         @self.app.post("/api/pipelines")
         async def post_pipelines(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
-            algorithm_id = request.get("algorithm_id", "apriltag_cpu")
+            algorithm_id = request.get("algorithm_id", "")
             target = request.get("target")
+            if not algorithm_id:
+                raise HTTPException(status_code=400, detail="algorithm_id is required")
             if not target:
                 raise HTTPException(status_code=400, detail="target (camera_id) is required")
-            instance_id = self.vision_pipeline_manager.start(algorithm_id, target)
+            instance_id, err_msg = self.vision_pipeline_manager.start(algorithm_id, target)
             if not instance_id:
-                raise HTTPException(status_code=500, detail="Failed to start pipeline (camera may be in use)")
+                raise HTTPException(
+                    status_code=500,
+                    detail=err_msg or "Failed to start pipeline. Save the pipeline first, then ensure the camera is available.",
+                )
+            self.logger.info(f"[WebServer] POST /api/pipelines started instance_id={instance_id} algorithm_id={algorithm_id} target={target}")
             return {"id": instance_id, "state": "running"}
 
         @self.app.post("/api/pipelines/{instance_id}/stop")
@@ -362,7 +369,7 @@ class WebServerAdapter:
             exposure: Optional[float] = None
             gain: Optional[float] = None
             saturation: Optional[float] = None
-            use_case: Optional[str] = None  # apriltag, perception, object-detection
+            use_case: Optional[str] = None  # apriltag, stream_only, vision_pipeline
         
         @self.app.get("/api/cameras/{camera_id}/detection_stats")
         async def get_detection_stats(camera_id: str) -> Dict[str, Any]:
@@ -432,7 +439,7 @@ class WebServerAdapter:
             config = self.camera_config_service.get_camera_config(camera_id) or {}
             return {
                 "camera_id": camera_id,
-                "use_case": config.get("use_case", "apriltag"),
+                "use_case": config.get("use_case", "stream_only"),
                 "family": "tag36h11",
             }
 
@@ -456,9 +463,9 @@ class WebServerAdapter:
             """Set camera settings."""
             settings = {}
             
-            # Handle use_case (validate and save)
+            # Handle use_case (validate and save). Phase 1: apriltag = Y-only (grayscale) path.
             if request.use_case is not None:
-                valid_use_cases = ['apriltag', 'perception', 'object-detection']
+                valid_use_cases = ['apriltag', 'stream_only', 'vision_pipeline']
                 if request.use_case not in valid_use_cases:
                     raise HTTPException(
                         status_code=400,
@@ -523,7 +530,7 @@ class WebServerAdapter:
         # Camera open/close endpoints
         @self.app.post("/api/cameras/{camera_id}/open")
         async def open_camera(camera_id: str, request: Request) -> Dict[str, Any]:
-            """Open a camera for streaming. Optional body: { stream_only: true } to open without vision pipeline (avoids apriltag)."""
+            """Open a camera. Uses saved use_case from config (apriltag=grayscale) unless body has stream_only: true."""
             # Get camera details to find device path
             camera_details = self.camera_discovery.get_camera_details(camera_id)
             if not camera_details:
@@ -533,8 +540,8 @@ class WebServerAdapter:
             if not device_path:
                 raise HTTPException(status_code=400, detail="Camera device path not available")
             
-            # Default True to avoid vision pipeline (apriltag) crash; set false in body to use pipeline
-            stream_only = True
+            # Default: use saved use_case from config (apriltag → grayscale). Set stream_only: true to force stream-only.
+            stream_only = None  # None = use config use_case
             try:
                 body_bytes = await request.body()
                 if body_bytes:
@@ -544,12 +551,12 @@ class WebServerAdapter:
                         stream_only = bool(body["stream_only"])
             except Exception:
                 pass
-            self.logger.info(f"[Stream] Opening camera {camera_id} stream_only={stream_only}")
+            self.logger.info(f"[Stream] Opening camera {camera_id} stream_only={stream_only} (None=use config use_case)")
             try:
                 success = self.camera_service.open_camera(
                     camera_id,
                     device_path,
-                    stream_only=stream_only,
+                    stream_only=stream_only if stream_only is not None else False,
                 )
             except Exception as e:
                 self.logger.error(f"[Stream] Open camera {camera_id} exception: {e}")

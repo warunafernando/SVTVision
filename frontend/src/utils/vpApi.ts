@@ -2,6 +2,16 @@ import { VPNode, VPEdge } from '../types';
 
 import { API_BASE } from './config';
 
+const LOG_PREFIX = '[Vision Pipeline]';
+
+function log(context: string, ...args: unknown[]): void {
+  if (typeof console !== 'undefined') console.log(LOG_PREFIX, context, ...args);
+}
+
+function logError(context: string, message: string): void {
+  if (typeof console !== 'undefined') console.error(LOG_PREFIX, context, message);
+}
+
 /** Stage/source/sink from backend StageRegistry (palette discovery) */
 export interface VPStageMeta {
   id: string;
@@ -46,7 +56,9 @@ export async function addVPStage(stage: {
   });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail || `Failed to add stage: ${response.statusText}`);
+    const msg = (err as { detail?: string }).detail || `Failed to add stage: ${response.statusText}`;
+    logError('POST vp/stages', msg);
+    throw new Error(msg);
   }
   return response.json();
 }
@@ -72,12 +84,14 @@ export async function validateGraph(
   nodes: VPNode[],
   edges: VPEdge[]
 ): Promise<ValidateResult> {
+  log('POST vp/validate', { nodeCount: nodes.length, edgeCount: edges.length });
   const response = await fetch(`${API_BASE}/vp/validate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nodes, edges }),
   });
   if (!response.ok) {
+    logError('POST vp/validate', `Failed to validate: ${response.statusText}`);
     throw new Error(`Failed to validate: ${response.statusText}`);
   }
   return response.json();

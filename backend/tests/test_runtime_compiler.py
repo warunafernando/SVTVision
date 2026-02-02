@@ -65,16 +65,30 @@ def test_compile_with_side_tap():
 
 
 def test_compile_requires_svt_output():
-    """Graph without SVTVisionOutput raises."""
+    """Graph without SVTVisionOutput and without any side tap from source raises."""
+    nodes = [
+        _node("n1", "source", source_type="camera"),
+        _node("n2", "sink", sink_type="stream_tap"),
+    ]
+    edges = []  # no edge: source not connected to stream_tap, so no side_taps_from_source
+    with pytest.raises(GraphValidationError) as exc_info:
+        compile_graph(nodes, edges)
+    assert exc_info.value.errors
+
+
+def test_compile_source_to_stream_tap_only():
+    """Graph with only CameraSource → StreamTap compiles (no SVTVisionOutput required)."""
     nodes = [
         _node("n1", "source", source_type="camera"),
         _node("n2", "sink", sink_type="stream_tap"),
     ]
     edges = [_edge("e1", "n1", "n2")]
-    with pytest.raises(GraphValidationError) as exc_info:
-        compile_graph(nodes, edges)
-    assert "SVTVisionOutput" in str(exc_info.value)
-    assert any("svt_output" in e.lower() or "SVTVisionOutput" in e for e in exc_info.value.errors)
+    plan = compile_graph(nodes, edges)
+    assert plan.main_path == ["n1"]
+    assert len(plan.side_taps) == 1
+    assert plan.side_taps[0].node_id == "n2"
+    assert plan.side_taps[0].sink_type == "stream_tap"
+    assert plan.side_taps[0].attach_point == "n1"
 
 
 def test_compile_requires_single_source():

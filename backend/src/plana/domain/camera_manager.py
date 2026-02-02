@@ -1,5 +1,6 @@
 """Camera manager for lifecycle and frame capture management."""
 
+import queue
 import threading
 import time
 import cv2
@@ -20,13 +21,13 @@ class CameraManager:
         camera_port: CameraPort,
         encoder: StreamEncoderPort,
         logger: LoggingService,
-        use_case: str = 'apriltag',
+        use_case: str = 'stream_only',
         vision_pipeline: Optional[VisionPipeline] = None
     ):
         self.camera_port = camera_port
         self.encoder = encoder
         self.logger = logger
-        self.use_case = use_case  # apriltag, perception, object-detection
+        self.use_case = use_case  # stream_only or vision_pipeline
         self.vision_pipeline = vision_pipeline  # Vision pipeline for processing stages
         
         self.device_path: Optional[str] = None
@@ -35,15 +36,12 @@ class CameraManager:
         self.fps: float = 0.0
         self.format: str = ''
         
-        # Bounded frame queue for processed frames (size=10, drop-oldest)
-        # Increased from 3 to 10 to reduce drops at high FPS (50fps)
+        # Bounded frame queue for processed/JPEG frames (streaming UI)
         self.frame_queue: deque = deque(maxlen=10)
         self.frame_queue_lock = threading.Lock()
         
-        # Raw frame queue for vision pipeline processing (only for cameras with vision pipeline)
-        # Separate queue so capture thread can be fast while vision processing happens asynchronously
-        self.raw_frame_queue: deque = deque(maxlen=5)  # Smaller queue - just for buffering
-        self.raw_frame_queue_lock = threading.Lock()
+        # Per-camera queue of 1: latest raw frame only. Camera manager thread puts; camera source (pipeline) gets.
+        self.raw_frame_queue: queue.Queue = queue.Queue(maxsize=1)
         
         # Metrics
         self.frames_captured = 0
@@ -79,9 +77,11 @@ class CameraManager:
         # Clear queues
         with self.frame_queue_lock:
             self.frame_queue.clear()
-        with self.raw_frame_queue_lock:
-            self.raw_frame_queue.clear()
-        
+        while True:
+            try:
+                self.raw_frame_queue.get_nowait()
+            except queue.Empty:
+                break
         # Reset metrics
         with self.metrics_lock:
             self.frames_captured = 0
@@ -103,9 +103,11 @@ class CameraManager:
         # Clear queues
         with self.frame_queue_lock:
             self.frame_queue.clear()
-        with self.raw_frame_queue_lock:
-            self.raw_frame_queue.clear()
-        
+        while True:
+            try:
+                self.raw_frame_queue.get_nowait()
+            except queue.Empty:
+                break
         self.device_path = None
         self.logger.info("[CameraManager] Camera closed")
     
@@ -250,48 +252,48 @@ class CameraManager:
         return self.camera_port.apply_control_settings(exposure, gain, saturation)
     
     def enqueue_raw_frame(self, raw_frame: np.ndarray) -> bool:
-        """Enqueue raw frame for vision pipeline processing.
-        
-        This is called by the capture thread to quickly put frames in a queue.
-        Returns True if frame was enqueued successfully.
+        """Put latest raw frame into queue of 1. Called by camera manager (capture) thread.
+        If queue full, replace with new frame so camera source always gets latest.
         """
         try:
-            with self.raw_frame_queue_lock:
-                was_full = len(self.raw_frame_queue) >= self.raw_frame_queue.maxlen
-                old_frame_count = len(self.raw_frame_queue)
-                self.raw_frame_queue.append(raw_frame)
-                
-                # Count drops if queue was full
-                if was_full and len(self.raw_frame_queue) == old_frame_count:
+            try:
+                self.raw_frame_queue.put_nowait(raw_frame)
+            except queue.Full:
+                try:
+                    self.raw_frame_queue.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    self.raw_frame_queue.put_nowait(raw_frame)
+                except queue.Full:
                     with self.metrics_lock:
                         self.frames_dropped += 1
-            
+                    return False
             with self.metrics_lock:
                 self.frames_captured += 1
                 self.last_frame_time = time.time()
-            
             return True
         except Exception as e:
             self.logger.error(f"[CameraManager] Error enqueueing raw frame: {e}")
             with self.metrics_lock:
                 self.frames_dropped += 1
             return False
+
+    def get_raw_frame(self, timeout: Optional[float] = None) -> Optional[np.ndarray]:
+        """Get next raw frame from queue. Called by camera source (pipeline); blocks until frame or timeout."""
+        try:
+            return self.raw_frame_queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
     
     def process_vision_pipeline(self) -> bool:
-        """Process one frame from raw queue through vision pipeline.
-        
-        This is called by the vision pipeline thread.
+        """Process one frame from camera queue through vision pipeline.
+        Camera source pulls frame from this camera's queue (of 1); non-blocking get.
         Returns True if a frame was processed, False if queue was empty.
         """
-        if not self.vision_pipeline or self.use_case != 'apriltag':
+        if not self.vision_pipeline or self.use_case not in ('apriltag', 'vision_pipeline'):
             return False
-        
-        # Get raw frame from queue
-        raw_frame = None
-        with self.raw_frame_queue_lock:
-            if self.raw_frame_queue:
-                raw_frame = self.raw_frame_queue.popleft()
-        
+        raw_frame = self.get_raw_frame(timeout=0.0)
         if raw_frame is None:
             return False
         
@@ -333,20 +335,11 @@ class CameraManager:
         This is separated from capture to reduce blocking between cameras.
         """
         try:
-            # If vision pipeline exists and use_case is 'apriltag', process through pipeline
-            if self.vision_pipeline and self.use_case == 'apriltag':
-                # Convert raw frame to grayscale for AprilTag cameras
-                if len(raw_frame.shape) == 3:
-                    raw_frame_gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
-                    # Convert to 3-channel for consistency (BGR format but grayscale)
-                    raw_frame_gray_bgr = cv2.cvtColor(raw_frame_gray, cv2.COLOR_GRAY2BGR)
-                else:
-                    raw_frame_gray_bgr = raw_frame
+            # If vision pipeline (from Run Pipeline), process with color frame
+            if self.vision_pipeline and self.use_case == 'vision_pipeline':
+                pipeline_result = self.vision_pipeline.process_frame(raw_frame)
                 
-                # Process frame through vision pipeline (pass grayscale version)
-                pipeline_result = self.vision_pipeline.process_frame(raw_frame_gray_bgr)
-                
-                # Store raw frame JPEG
+                # Store raw frame JPEG (color)
                 if pipeline_result.get("raw"):
                     raw_jpeg = pipeline_result["raw"].get_jpeg_bytes()
                     with self.frame_queue_lock:
@@ -364,9 +357,8 @@ class CameraManager:
                 
                 return True
             else:
-                # Legacy behavior: convert to JPEG and store
-                grayscale = (self.use_case == 'apriltag')
-                frame_data = self.camera_port.capture_frame(grayscale=grayscale)
+                # Stream-only: convert to JPEG and store (color)
+                frame_data = self.camera_port.capture_frame(grayscale=False)
                 
                 if frame_data:
                     with self.frame_queue_lock:
@@ -402,10 +394,9 @@ class CameraManager:
         
         Pipeline flow:
         1. Capture raw frame (numpy array)
-        2. If vision pipeline exists and use_case is 'apriltag':
-           - Process through pipeline (preprocess → detect → overlay)
-           - Store raw, preprocess, and detect_overlay frames
-        3. If no vision pipeline or use_case is not 'apriltag':
+        2. If vision pipeline exists (use_case is 'vision_pipeline'):
+           - Process through pipeline and store result frames
+        3. Otherwise (stream_only):
            - Convert to JPEG and store in raw queue (legacy behavior)
         """
         if not self.camera_port.is_open():
@@ -420,20 +411,11 @@ class CameraManager:
                     self.frames_dropped += 1
                 return False
             
-            # If vision pipeline exists and use_case is 'apriltag', process through pipeline
-            if self.vision_pipeline and self.use_case == 'apriltag':
-                # Convert raw frame to grayscale for AprilTag cameras
-                if len(raw_frame.shape) == 3:
-                    raw_frame_gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
-                    # Convert to 3-channel for consistency (BGR format but grayscale)
-                    raw_frame_gray_bgr = cv2.cvtColor(raw_frame_gray, cv2.COLOR_GRAY2BGR)
-                else:
-                    raw_frame_gray_bgr = raw_frame
+            # If vision pipeline (from Run Pipeline), process with color frame
+            if self.vision_pipeline and self.use_case == 'vision_pipeline':
+                pipeline_result = self.vision_pipeline.process_frame(raw_frame)
                 
-                # Process frame through vision pipeline (pass grayscale version)
-                pipeline_result = self.vision_pipeline.process_frame(raw_frame_gray_bgr)
-                
-                # Store raw frame JPEG
+                # Store raw frame JPEG (color)
                 if pipeline_result.get("raw"):
                     raw_jpeg = pipeline_result["raw"].get_jpeg_bytes()
                     with self.frame_queue_lock:
@@ -451,9 +433,8 @@ class CameraManager:
                 
                 return True
             else:
-                # Legacy behavior: convert to JPEG and store
-                grayscale = (self.use_case == 'apriltag')
-                frame_data = self.camera_port.capture_frame(grayscale=grayscale)
+                # Stream-only: convert to JPEG and store (color)
+                frame_data = self.camera_port.capture_frame(grayscale=False)
                 
                 if frame_data:
                     with self.frame_queue_lock:

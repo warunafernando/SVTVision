@@ -42,11 +42,13 @@ class OpenCVCameraAdapter(CameraPort):
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
             self.cap.set(cv2.CAP_PROP_FPS, fps)
             
-            # Set format (if MJPG is requested)
+            # Set format. Phase 1: GREY = Y-only (grayscale) for apriltag use_case.
             if format == 'MJPG':
                 self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             elif format == 'YUYV':
                 self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'YUYV'))
+            elif format == 'GREY':
+                self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'GREY'))
             
             # Verify actual settings
             actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -167,6 +169,8 @@ class OpenCVCameraAdapter(CameraPort):
                 self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             elif format == 'YUYV':
                 self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'YUYV'))
+            elif format == 'GREY':
+                self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'GREY'))
             
             # Update stored values
             actual_settings = self.get_actual_settings()

@@ -1,0 +1,61 @@
+{
+  "name": "Untitled2",
+  "description": "",
+  "nodes": [
+    {
+      "id": "n_n3p61fv",
+      "type": "source",
+      "source_type": "camera",
+      "name": "CameraSource",
+      "ports": {
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_sl7d6d8",
+      "type": "sink",
+      "sink_type": "stream_tap",
+      "name": "StreamTap",
+      "ports": {
+        "inputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_rg1umwa",
+      "source_node": "n_n3p61fv",
+      "source_port": "frame",
+      "target_node": "n_sl7d6d8",
+      "target_port": "frame"
+    }
+  ],
+  "layout": {
+    "n_n3p61fv": {
+      "x": 74.98094940185547,
+      "y": 0
+    },
+    "n_sl7d6d8": {
+      "x": 239.10308837890625,
+      "y": 49.22901916503906
+    }
+  },
+  "updated_at": "2026-02-02T01:15:16.853211Z"
+}

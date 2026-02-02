@@ -17,6 +17,36 @@
   z-index: 1000;
 }
 
+.cameras-toolbar {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  background: var(--panel-bg, #1e1e2e);
+  border-bottom: 1px solid var(--border-color, #313244);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cameras-toolbar-button {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: none;
+  background: var(--accent, #89b4fa);
+  color: var(--panel-bg, #1e1e2e);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.cameras-toolbar-button:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.cameras-toolbar-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .cameras-main-content {
   flex: 1;
   display: flex;

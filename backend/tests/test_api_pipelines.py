@@ -12,11 +12,15 @@ from plana.app_orchestrator import AppOrchestrator
 
 
 @pytest.fixture
-def app():
+def orchestrator():
     project_root = Path(__file__).resolve().parent.parent.parent
     config_dir = project_root / "config"
     frontend_dist = project_root / "frontend" / "dist"
-    orchestrator = AppOrchestrator(config_dir, frontend_dist)
+    return AppOrchestrator(config_dir, frontend_dist)
+
+
+@pytest.fixture
+def app(orchestrator):
     return orchestrator.start()
 
 
@@ -72,16 +76,43 @@ def test_post_pipelines_with_algorithm_stage6(client: TestClient):
         pytest.skip("No cameras available")
     camera_id = cameras[0]["id"]
 
-    # Start pipeline with algorithm (Stage 6: loads, compiles, builds, opens camera)
+    # Phase 2: camera must be open before starting pipeline. Open it first.
+    open_resp = client.post(
+        f"/api/cameras/{camera_id}/open",
+        json={},
+    )
+    camera_was_opened = open_resp.status_code in (200, 201)
+
+    # Start pipeline (Phase 2: attach to already-open camera; no open in start)
     start_resp = client.post(
         "/api/pipelines",
         json={"algorithm_id": algo_id, "target": camera_id},
     )
-    # 200/201 = success; 500 = camera open failed (e.g. no device)
     assert start_resp.status_code in (200, 201, 500)
     if start_resp.status_code in (200, 201):
         data = start_resp.json()
         assert "id" in data
         assert data.get("state") == "running"
-        # Cleanup: stop the pipeline
-        client.post(f"/api/pipelines/{data['id']}/stop")
+        # Cleanup: stop the pipeline (detach only; camera stays open)
+        stop_resp = client.post(f"/api/pipelines/{data['id']}/stop")
+        assert stop_resp.status_code in (200, 201, 404)
+    else:
+        # 500 = camera not open (Phase 2: "Open the camera first") or other error
+        assert start_resp.status_code == 500
+
+
+def test_camera_id_from_graph_phase3(orchestrator):
+    """Phase 3: camera_id is resolved from graph CameraSource config (pull from already-open camera)."""
+    vpm = orchestrator.vision_pipeline_manager
+    # No CameraSource with camera_id -> None
+    assert vpm._camera_id_from_graph({"nodes": [{"type": "source", "source_type": "camera"}]}) is None
+    # CameraSource with config.camera_id -> that id
+    algo = {
+        "nodes": [
+            {"id": "n1", "type": "source", "source_type": "camera", "config": {"camera_id": "usb-cam-6-1"}},
+        ],
+    }
+    assert vpm._camera_id_from_graph(algo) == "usb-cam-6-1"
+    # Empty config -> None
+    algo["nodes"][0]["config"] = {}
+    assert vpm._camera_id_from_graph(algo) is None

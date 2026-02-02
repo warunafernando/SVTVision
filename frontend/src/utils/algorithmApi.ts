@@ -1,13 +1,17 @@
 import { PipelineGraph, AlgorithmMeta } from '../types';
 import { API_BASE } from './config';
+
 const LOG_PREFIX = '[Vision Pipeline]';
 
 function log(group: string, ...args: unknown[]): void {
-  const prefix = `${LOG_PREFIX} ${group}`;
   if (typeof console !== 'undefined') {
-    console.groupCollapsed(prefix);
-    console.log(prefix, ...args); // Include prefix so GUI console can filter by "Vision Pipeline"
-    console.groupEnd();
+    console.log(LOG_PREFIX, group, ...args);
+  }
+}
+
+function logError(context: string, message: string, err?: unknown): void {
+  if (typeof console !== 'undefined') {
+    console.error(LOG_PREFIX, context, message, err ?? '');
   }
 }
 
@@ -17,6 +21,7 @@ export async function fetchAlgorithms(): Promise<AlgorithmMeta[]> {
   const response = await fetch(url);
   log('GET algorithms response', { url, status: response.status, statusText: response.statusText });
   if (!response.ok) {
+    logError('GET algorithms', `Failed to fetch algorithms: ${response.statusText}`);
     throw new Error(`Failed to fetch algorithms: ${response.statusText}`);
   }
   const data = await response.json();
@@ -68,7 +73,9 @@ export async function createAlgorithm(graph: Partial<PipelineGraph>): Promise<{ 
         return {};
       }
     })();
-    throw new Error(err.detail || `Failed to create algorithm: ${response.status} ${response.statusText}`);
+    const msg = (err as { detail?: string }).detail || `Failed to create algorithm: ${response.status} ${response.statusText}`;
+    logError('POST create algorithm', msg);
+    throw new Error(msg);
   }
   return JSON.parse(bodyText);
 }
@@ -128,6 +135,8 @@ export async function deleteAlgorithm(id: string): Promise<void> {
         return {};
       }
     })();
-    throw new Error(err.detail || `Failed to delete algorithm: ${response.statusText}`);
+    const msg = (err as { detail?: string }).detail || `Failed to delete algorithm: ${response.statusText}`;
+    logError('DELETE algorithm', msg);
+    throw new Error(msg);
   }
 }
