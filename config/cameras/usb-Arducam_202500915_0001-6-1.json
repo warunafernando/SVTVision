@@ -1,4 +1,5 @@
 {
+  "use_case": "apriltag",
   "brightness": 0,
   "contrast": 17,
   "saturation": 13.0,

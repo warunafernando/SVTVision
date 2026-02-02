@@ -29,6 +29,7 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
 }) => {
   const [resolutionFpsOptions, setResolutionFpsOptions] = useState<ResolutionFpsOption[]>([]);
   const [selectedResolutionFps, setSelectedResolutionFps] = useState<string>('');
+  const [useCase, setUseCase] = useState<string>('stream_only');
   const [cameraControls, setCameraControls] = useState<CameraControl[]>([]);
   const [controlValues, setControlValues] = useState<Record<string, number>>({});
   const [loadingCapabilities, setLoadingCapabilities] = useState(false);
@@ -50,6 +51,7 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
     if (!cameraId) {
       setResolutionFpsOptions([]);
       setSelectedResolutionFps('');
+      setUseCase('stream_only');
       return;
     }
 
@@ -103,15 +105,15 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
         
         setResolutionFpsOptions(options);
         
-        // Load saved resolution/FPS from settings endpoint
+        // Load saved resolution/FPS and use_case from settings endpoint (same as Discovery tab)
         try {
           const settingsResponse = await fetch(`${API_BASE}/cameras/${cameraId}/settings`);
           if (settingsResponse.ok) {
             const settingsData = await settingsResponse.json();
-            const savedRes = settingsData.requested?.resolution;
+            const requested = settingsData.requested || {};
+            const savedRes = requested.resolution;
             if (savedRes && savedRes.format && savedRes.width && savedRes.height && savedRes.fps) {
               const savedValue = `${savedRes.format}:${savedRes.width}x${savedRes.height}:${savedRes.fps}`;
-              // Check if this option exists in available options
               const optionExists = options.find(opt => opt.value === savedValue);
               if (optionExists) {
                 setSelectedResolutionFps(savedValue);
@@ -120,6 +122,10 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
               }
             } else if (options.length > 0) {
               setSelectedResolutionFps(options[0].value);
+            }
+            const savedUseCase = requested.use_case;
+            if (savedUseCase === 'apriltag' || savedUseCase === 'stream_only' || savedUseCase === 'vision_pipeline') {
+              setUseCase(savedUseCase);
             }
           } else if (options.length > 0) {
             setSelectedResolutionFps(options[0].value);
@@ -406,6 +412,24 @@ const ControlsPane: React.FC<ControlsPaneProps> = ({
                 >
                   Reset
                 </button>
+              )}
+            </div>
+
+            <div className="control-group">
+              <label>Use case</label>
+              <select
+                className="select"
+                value={useCase}
+                onChange={(e) => handleUseCaseChange(e.target.value)}
+                disabled={isCameraOpen}
+                title="AprilTag = Y-plane/grayscale. Set before opening."
+              >
+                <option value="apriltag">AprilTag (Y-plane)</option>
+                <option value="stream_only">Stream only</option>
+                <option value="vision_pipeline">Vision pipeline</option>
+              </select>
+              {isCameraOpen && (
+                <div className="control-hint">Close camera to change use case</div>
               )}
             </div>
 

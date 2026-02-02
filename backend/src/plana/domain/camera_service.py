@@ -25,18 +25,17 @@ class CameraService:
         self.camera_config_service = camera_config_service
         self.camera_managers: Dict[str, CameraManager] = {}
         
-        # Dedicated camera-manager thread: captures from all open cameras and puts latest frame
-        # into each camera's queue (of 1). Camera source (pipeline) pulls from these queues.
-        self.camera_manager_thread: Optional[threading.Thread] = None
-        self.camera_manager_running = False
-        self.camera_manager_lock = threading.Lock()
+        # Single capture-only thread: only capture_frame_raw() and enqueue_raw_frame() for all cameras.
+        self._capture_thread: Optional[threading.Thread] = None
+        self._capture_running = False
+        self._capture_lock = threading.Lock()
         
-        # Vision pipeline thread: pulls frames from camera queues (camera source) and runs pipelines
+        # Consumer thread: pulls raw from queues, runs pipeline or encodes to JPEG for stream.
         self.vision_pipeline_thread: Optional[threading.Thread] = None
         self.vision_pipeline_running = False
         self.vision_pipeline_thread_lock = threading.Lock()
         
-        self.logger.info("[CameraService] Initialized: camera-manager thread (queues of 1), vision pipeline thread (camera source pulls)")
+        self.logger.info("[CameraService] Initialized: single capture-only thread, consumer thread (pipeline/encode)")
     
     def open_camera(
         self,
@@ -53,11 +52,18 @@ class CameraService:
         
         If width/height/fps/format are not provided, loads from saved config.
         If stream_only is True, opens without vision pipeline (stream only).
+        If camera is already open but config use_case changed (e.g. to apriltag), close and reopen so Y-plane/grayscale applies.
         """
-        # Phase 2: pipeline attach is done by VisionPipelineManager; we only open cameras here.
+        camera_config = self.camera_config_service.get_camera_config(camera_id) or {}
         if camera_id in self.camera_managers and self.camera_managers[camera_id].is_open():
-            self.logger.warning(f"[CameraService] Camera {camera_id} already open")
-            return True
+            manager = self.camera_managers[camera_id]
+            config_use_case = camera_config.get('use_case', 'stream_only')
+            if not stream_only and vision_pipeline is None and getattr(manager, 'use_case', None) != config_use_case:
+                self.logger.info(f"[CameraService] Camera {camera_id} use_case changed to {config_use_case}, reopening for Y-plane/grayscale")
+                self.close_camera(camera_id)
+            else:
+                self.logger.warning(f"[CameraService] Camera {camera_id} already open")
+                return True
 
         # Get settings from config if not provided
         if width is None or height is None or fps is None or format is None:
@@ -80,7 +86,6 @@ class CameraService:
         encoder = MJPEGEncoderAdapter(self.logger)
         
         # use_case: from config when not stream_only (saved apriltag → grayscale); stream_only or vision_pipeline override
-        camera_config = self.camera_config_service.get_camera_config(camera_id) or {}
         if vision_pipeline is not None:
             use_case = 'vision_pipeline'
             self.logger.info(f"[CameraService] Using custom vision pipeline for camera {camera_id}")
@@ -143,10 +148,9 @@ class CameraService:
                 f"expected {width}x{height}@{fps}fps, got {verification.get('actual', {})}"
             )
         
-        # Start dedicated camera-manager thread if not already running
-        self._ensure_camera_manager_thread_running()
-        
-        # Start vision pipeline thread if not already running
+        # Start single capture-only thread if not already running
+        self._ensure_capture_thread_running()
+        # Start consumer thread (pipeline + encode for stream_only)
         self._ensure_vision_pipeline_thread_running()
         
         self.logger.info(f"[CameraService] Camera {camera_id} opened successfully")
@@ -162,15 +166,12 @@ class CameraService:
         manager.close()
         del self.camera_managers[camera_id]
         
-        # Stop camera-manager thread if no cameras remain
-        with self.camera_manager_lock:
+        # Stop capture thread if no cameras remain
+        with self._capture_lock:
             if len(self.camera_managers) == 0:
-                self._stop_camera_manager_thread()
-        
-        # Stop vision pipeline thread if no cameras with pipelines remain
-        cameras_with_pipelines = sum(1 for m in self.camera_managers.values() 
-                                     if hasattr(m, 'vision_pipeline') and m.vision_pipeline)
-        if cameras_with_pipelines == 0:
+                self._stop_capture_thread()
+        # Stop consumer thread if no cameras remain
+        if len(self.camera_managers) == 0:
             self._stop_vision_pipeline_thread()
         
         self.logger.info(f"[CameraService] Camera {camera_id} closed")
@@ -237,117 +238,61 @@ class CameraService:
         manager = self.camera_managers[camera_id]
         return manager.apply_control_settings(exposure, gain, saturation)
     
-    def _ensure_camera_manager_thread_running(self) -> None:
-        """Ensure the dedicated camera-manager thread is running (feeds queues of 1 for all cameras)."""
-        with self.camera_manager_lock:
-            if not self.camera_manager_running and len(self.camera_managers) > 0:
-                self.camera_manager_running = True
-                self.camera_manager_thread = threading.Thread(target=self._camera_manager_loop, daemon=True)
-                self.camera_manager_thread.start()
-                self.logger.info("[CameraService] Camera-manager thread started (queues of 1 for all cameras)")
+    def _ensure_capture_thread_running(self) -> None:
+        """Start the single capture-only thread (only capture + enqueue raw; no conversion, no encode)."""
+        with self._capture_lock:
+            if not self._capture_running and len(self.camera_managers) > 0:
+                self._capture_running = True
+                self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
+                self._capture_thread.start()
+                self.logger.info("[CameraService] Single capture-only thread started (all cameras)")
     
-    def _stop_camera_manager_thread(self) -> None:
-        """Stop the dedicated camera-manager thread."""
-        if self.camera_manager_running:
-            self.camera_manager_running = False
-            if self.camera_manager_thread:
-                self.camera_manager_thread.join(timeout=2.0)
-                self.camera_manager_thread = None
-            self.logger.info("[CameraService] Camera-manager thread stopped")
+    def _stop_capture_thread(self) -> None:
+        """Stop the single capture-only thread."""
+        if self._capture_running:
+            self._capture_running = False
+            if self._capture_thread:
+                self._capture_thread.join(timeout=2.0)
+                self._capture_thread = None
+            self.logger.info("[CameraService] Capture-only thread stopped")
     
-    def _camera_manager_loop(self) -> None:
-        """Dedicated camera-manager thread: capture from all open cameras and put latest frame
-        into each camera's queue (of 1). Camera source (pipeline) connects to these queues and gets frames.
-        """
-        self.logger.info("[CameraService] Camera-manager loop started - feeding queues of 1 for all cameras")
-        iteration_count = 0
-        while self.camera_manager_running:
-            iteration_start = time.time()
-            iteration_count += 1
-            with self.camera_manager_lock:
-                cameras_to_process = list(self.camera_managers.items())
-            if not cameras_to_process:
+    def _capture_loop(self) -> None:
+        """Single thread: only capture and enqueue raw for all cameras. No conversion, no encode."""
+        self.logger.info("[CameraService] Capture loop started - capture only, no processing")
+        while self._capture_running:
+            with self._capture_lock:
+                cameras = list(self.camera_managers.items())
+            if not cameras:
                 time.sleep(0.1)
                 continue
-            for camera_id, manager in cameras_to_process:
-                if not self.camera_manager_running:
+            for camera_id, manager in cameras:
+                if not self._capture_running:
                     break
-                
-                # Capture raw frame quickly and enqueue for vision processing
+                if not manager.camera_port.is_open():
+                    continue
                 try:
-                    if manager.camera_port.is_open():
-                        raw_frame = manager.camera_port.capture_frame_raw()
-                        if raw_frame is not None:
-                            # Phase 1: apriltag = Y-only. Convert to grayscale before enqueue/encode.
-                            import cv2
-                            if manager.use_case == 'apriltag' and len(raw_frame.shape) == 3:
-                                gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
-                                raw_frame = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-                            # If camera has vision pipeline (apriltag or custom), enqueue for processing
-                            if manager.vision_pipeline and manager.use_case in ('apriltag', 'vision_pipeline'):
-                                manager.enqueue_raw_frame(raw_frame)
-                            else:
-                                # No vision pipeline - convert to JPEG directly
-                                grayscale = (manager.use_case == 'apriltag')
-                                if grayscale and len(raw_frame.shape) == 3:
-                                    gray_frame = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
-                                    frame_to_encode = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2BGR)
-                                else:
-                                    frame_to_encode = raw_frame
-                                
-                                _, jpeg_bytes = cv2.imencode('.jpg', frame_to_encode, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                                if jpeg_bytes is not None:
-                                    frame_data = jpeg_bytes.tobytes()
-                                    with manager.frame_queue_lock:
-                                        manager.frame_queue.append(frame_data)
-                                    with manager.metrics_lock:
-                                        manager.frames_captured += 1
-                                        manager.last_frame_time = time.time()
-                                else:
-                                    with manager.metrics_lock:
-                                        manager.frames_dropped += 1
-                        else:
-                            with manager.metrics_lock:
-                                manager.frames_dropped += 1
+                    raw_frame = manager.camera_port.capture_frame_raw()
+                    if raw_frame is not None:
+                        manager.enqueue_raw_frame(raw_frame)
+                    else:
+                        with manager.metrics_lock:
+                            manager.frames_dropped += 1
                 except Exception as e:
-                    self.logger.error(f"Error capturing frame for camera {camera_id}: {e}")
+                    self.logger.error(f"[CameraService] Capture error for {camera_id}: {e}")
                     with manager.metrics_lock:
                         manager.frames_dropped += 1
-            
-            elapsed = time.time() - iteration_start
-            max_fps = 30.0
-            for _camera_id, manager in cameras_to_process:
-                if manager.is_open():
-                    camera_fps = manager.fps if hasattr(manager, 'fps') else 30.0
-                    if camera_fps > max_fps:
-                        max_fps = camera_fps
-            # Each iteration serves one frame per camera; so we need (max_fps * N) iterations/sec for N cameras
-            num_cameras = max(1, len(cameras_to_process))
-            target_iterations_per_sec = max_fps * 1.2 * num_cameras
-            sleep_time = max(0.0, (1.0 / target_iterations_per_sec) - elapsed)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            if iteration_count % 1000 == 0:
-                active_cameras = sum(1 for _, m in cameras_to_process if m.is_open())
-                self.logger.info(f"[CameraService] Camera-manager loop: {iteration_count} iterations, {active_cameras} cameras")
-        self.logger.info("[CameraService] Camera-manager loop stopped")
+        self.logger.info("[CameraService] Capture loop stopped")
     
     def _ensure_vision_pipeline_thread_running(self) -> None:
-        """Ensure the vision pipeline processing thread is running."""
+        """Ensure the consumer thread is running (pipeline + encode for stream_only)."""
         with self.vision_pipeline_thread_lock:
-            if not self.vision_pipeline_running:
-                # Check if any cameras have vision pipelines
-                has_pipelines = any(
-                    hasattr(m, 'vision_pipeline') and m.vision_pipeline
-                    for m in self.camera_managers.values()
+            if not self.vision_pipeline_running and len(self.camera_managers) > 0:
+                self.vision_pipeline_running = True
+                self.vision_pipeline_thread = threading.Thread(
+                    target=self._vision_pipeline_loop, daemon=True
                 )
-                if has_pipelines:
-                    self.vision_pipeline_running = True
-                    self.vision_pipeline_thread = threading.Thread(
-                        target=self._vision_pipeline_loop, daemon=True
-                    )
-                    self.vision_pipeline_thread.start()
-                    self.logger.info("[CameraService] Vision pipeline processing thread started")
+                self.vision_pipeline_thread.start()
+                self.logger.info("[CameraService] Consumer thread started (pipeline + encode)")
     
     def _stop_vision_pipeline_thread(self) -> None:
         """Stop the vision pipeline processing thread."""
@@ -359,45 +304,49 @@ class CameraService:
             self.logger.info("Vision pipeline processing thread stopped")
     
     def _vision_pipeline_loop(self) -> None:
-        """Vision pipeline processing thread (camera source).
-        Pulls frames from each camera's queue (of 1) and runs the attached vision pipeline.
-        """
-        self.logger.info("[CameraService] Vision pipeline processing loop started")
-        
+        """Consumer thread: pull raw from each camera's queue; run pipeline or encode to JPEG for stream."""
+        import cv2
+        self.logger.info("[CameraService] Consumer loop started (pipeline + encode for all cameras)")
         while self.vision_pipeline_running:
             processed_any = False
-            
-            # Get list of camera managers with vision pipelines
             with self.vision_pipeline_thread_lock:
                 if not self.vision_pipeline_running:
                     break
-                cameras_to_process = [
+                cameras = [
                     (camera_id, manager)
                     for camera_id, manager in self.camera_managers.items()
-                    if manager.is_open() and 
-                       hasattr(manager, 'vision_pipeline') and 
-                       manager.vision_pipeline and 
-                       manager.use_case == 'vision_pipeline'
+                    if manager.is_open()
                 ]
-            
-            # If no cameras with pipelines, wait a bit
-            if not cameras_to_process:
+            if not cameras:
                 time.sleep(0.1)
                 continue
-            
-            # Process one frame from each camera's raw queue
-            for camera_id, manager in cameras_to_process:
+            for camera_id, manager in cameras:
                 if not self.vision_pipeline_running:
                     break
-                
                 try:
-                    if manager.process_vision_pipeline():
-                        processed_any = True
+                    if manager.vision_pipeline and manager.use_case == "vision_pipeline":
+                        if manager.process_vision_pipeline():
+                            processed_any = True
+                    else:
+                        # stream_only or apriltag: get raw, convert if apriltag, encode to JPEG
+                        raw_frame = manager.get_raw_frame(timeout=0.0)
+                        if raw_frame is not None:
+                            processed_any = True
+                            if manager.use_case == "apriltag" and len(raw_frame.shape) == 3:
+                                gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
+                                frame_to_encode = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+                            else:
+                                frame_to_encode = raw_frame
+                            _, jpeg_bytes = cv2.imencode(".jpg", frame_to_encode, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                            if jpeg_bytes is not None:
+                                frame_data = jpeg_bytes.tobytes()
+                                with manager.frame_queue_lock:
+                                    manager.frame_queue.append(frame_data)
+                                with manager.metrics_lock:
+                                    manager.frames_captured += 1
+                                    manager.last_frame_time = time.time()
                 except Exception as e:
-                    self.logger.error(f"[CameraService] Error processing vision pipeline for camera {camera_id}: {e}")
-            
-            # Small sleep if we didn't process anything (all queues empty)
+                    self.logger.error(f"[CameraService] Consumer error for {camera_id}: {e}")
             if not processed_any:
-                time.sleep(0.01)  # 10ms sleep when queues are empty
-        
-        self.logger.info("[CameraService] Vision pipeline processing loop stopped")
+                time.sleep(0.01)
+        self.logger.info("[CameraService] Consumer loop stopped")

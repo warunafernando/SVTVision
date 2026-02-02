@@ -1,0 +1,19 @@
+{
+  "name": "AprilTag Pipeline",
+  "description": "",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "source",
+      "source_type": "camera"
+    }
+  ],
+  "edges": [],
+  "layout": {
+    "n1": {
+      "x": 50,
+      "y": 50
+    }
+  },
+  "updated_at": "2026-02-02T04:26:19.685644Z"
+}
