@@ -56,11 +56,14 @@ def test_stream_tap_metrics(dummy_frame):
     assert metrics["attach_point"] == "node1"
     assert metrics["frame_count"] == 0
     assert metrics["has_frame"] is False
-    
+    assert "fps" in metrics
+    assert metrics["fps"] == 0.0
+
     tap.push_frame(dummy_frame)
     metrics = tap.get_metrics()
     assert metrics["frame_count"] == 1
     assert metrics["has_frame"] is True
+    assert "fps" in metrics
 
 
 def test_stream_tap_registry_register_and_get():

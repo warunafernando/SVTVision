@@ -7,6 +7,7 @@ import threading
 import time
 import cv2
 import numpy as np
+from collections import deque
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
 
@@ -45,15 +46,18 @@ class StreamTap:
         self._lock = threading.Lock()
         self._frame_count = 0
         self._created_at = time.time()
+        self._frame_times: deque = deque(maxlen=60)  # ~1s at 60fps for FPS calc
 
     def push_frame(self, frame: np.ndarray) -> None:
         """Update the latest frame (called by pipeline)."""
         with self._lock:
+            now = time.time()
             self._frame = StreamTapFrame(
                 frame=frame.copy(),
-                timestamp=time.time(),
+                timestamp=now,
             )
             self._frame_count += 1
+            self._frame_times.append(now)
 
     def get_frame(self) -> Optional[StreamTapFrame]:
         """Get the latest frame (called by WebSocket streamer)."""
@@ -68,14 +72,20 @@ class StreamTap:
             return self._frame.get_jpeg_bytes()
 
     def get_metrics(self) -> Dict[str, Any]:
-        """Get tap metrics."""
+        """Get tap metrics (includes fps from recent frame timestamps)."""
         with self._lock:
+            fps = 0.0
+            if len(self._frame_times) >= 2:
+                span = self._frame_times[-1] - self._frame_times[0]
+                if span > 0:
+                    fps = (len(self._frame_times) - 1) / span
             return {
                 "tap_id": self.tap_id,
                 "attach_point": self.attach_point,
                 "frame_count": self._frame_count,
                 "has_frame": self._frame is not None,
                 "uptime_seconds": time.time() - self._created_at,
+                "fps": round(fps, 1),
             }
 
 

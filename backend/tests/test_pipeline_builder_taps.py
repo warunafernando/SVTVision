@@ -97,7 +97,7 @@ def test_build_with_multiple_stream_taps(logger):
 
 
 def test_build_no_stream_taps(logger):
-    """Build pipeline without StreamTaps."""
+    """Build pipeline without StreamTaps: a preview tap is auto-added so user can see video."""
     nodes = [
         _node("n1", "source", source_type="camera"),
         _node("n2", "stage", stage_id="preprocess_cpu"),
@@ -115,7 +115,9 @@ def test_build_no_stream_taps(logger):
     assert result is not None
     pipeline, stream_taps, save_sinks = result
     
-    assert len(stream_taps) == 0
+    assert len(stream_taps) == 1
+    assert stream_taps[0].tap_id == "preview"
+    assert stream_taps[0].attach_point == "n1"
     assert len(save_sinks) == 0
 
 
@@ -146,7 +148,8 @@ def test_build_with_save_video_and_save_image(logger, tmp_path):
     assert result is not None
     pipeline, stream_taps, save_sinks = result
     
-    assert len(stream_taps) == 0
+    assert len(stream_taps) == 1
+    assert stream_taps[0].tap_id == "preview"
     assert len(save_sinks) == 2
     sink_ids = {s.sink_id for s in save_sinks}
     assert "sv1" in sink_ids
@@ -175,4 +178,66 @@ def test_build_source_to_stream_tap_only(logger):
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
     out = pipeline.process_frame(frame)
     assert "raw" in out
-    assert stream_taps[0].get_jpeg() is not None
+
+
+def test_build_source_to_save_video_and_stream_tap(logger, tmp_path):
+    """Build pipeline CameraSource → SaveVideo + StreamTap (no stages); both get frames, no preview added."""
+    import numpy as np
+    nodes = [
+        _node("n1", "source", source_type="camera"),
+        _node("sv1", "sink", sink_type="save_video"),
+        _node("tap1", "sink", sink_type="stream_tap"),
+    ]
+    edges = [
+        _edge("e1", "n1", "frame", "sv1", "frame"),
+        _edge("e2", "n1", "frame", "tap1", "frame"),
+    ]
+    plan = compile_graph(nodes, edges)
+    plan.node_configs["sv1"] = {"path": str(tmp_path / "out.mp4"), "fps": 30.0}
+    result = build_pipeline_with_taps(plan, nodes, logger)
+    assert result is not None
+    pipeline, stream_taps, save_sinks = result
+    assert len(stream_taps) == 1
+    assert stream_taps[0].tap_id == "tap1"
+    assert stream_taps[0].attach_point == "n1"
+    assert len(save_sinks) == 1
+    assert save_sinks[0].sink_id == "sv1"
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    pipeline.process_frame(frame)
+    pipeline.process_frame(frame)
+    for s in save_sinks:
+        s.close()
+    assert (tmp_path / "out.mp4").exists()
+    assert (tmp_path / "out.mp4").stat().st_size > 0
+
+
+def test_build_source_to_save_video_and_save_image_writes_files(logger, tmp_path):
+    """Build pipeline CameraSource → SaveVideo + SaveImage (no stages); process_frame writes files."""
+    import numpy as np
+    nodes = [
+        _node("n1", "source", source_type="camera"),
+        _node("sv1", "sink", sink_type="save_video"),
+        _node("si1", "sink", sink_type="save_image"),
+    ]
+    edges = [
+        _edge("e1", "n1", "frame", "sv1", "frame"),
+        _edge("e2", "n1", "frame", "si1", "frame"),
+    ]
+    plan = compile_graph(nodes, edges)
+    plan.node_configs["sv1"] = {"path": str(tmp_path / "out.mp4"), "fps": 30.0}
+    plan.node_configs["si1"] = {"path": str(tmp_path / "frame.jpg"), "mode": "overwrite"}
+    result = build_pipeline_with_taps(plan, nodes, logger)
+    assert result is not None
+    pipeline, stream_taps, save_sinks = result
+    assert len(stream_taps) == 1
+    assert stream_taps[0].tap_id == "preview"
+    assert len(save_sinks) == 2
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    pipeline.process_frame(frame)
+    pipeline.process_frame(frame)
+    for s in save_sinks:
+        s.close()
+    assert (tmp_path / "out.mp4").exists()
+    assert (tmp_path / "frame.jpg").exists()
+    assert (tmp_path / "out.mp4").stat().st_size > 0
+    assert (tmp_path / "frame.jpg").stat().st_size > 0

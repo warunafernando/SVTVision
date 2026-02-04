@@ -4,6 +4,9 @@ Builds VisionPipeline from ExecutionPlan by resolving stage_ids to PipelineStage
 Also creates StreamTaps (Stage 7) and SaveVideo/SaveImage sinks (Stage 8).
 """
 
+import os
+import random
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 from ..ports.pipeline_stage_port import PipelineStagePort
 from ..services.logging_service import LoggingService
@@ -11,6 +14,28 @@ from .vision_pipeline import VisionPipeline
 from .runtime_compiler import ExecutionPlan
 from .stream_tap import StreamTap
 from .save_sinks import SaveVideoSink, SaveImageSink
+
+
+# Default directory for SaveVideo/SaveImage when path is missing or relative
+DEFAULT_SAVE_DIR = "/home/svt/Documents"
+
+
+def _random_output_filename(ext: str) -> str:
+    """Return a random filename under DEFAULT_SAVE_DIR: output_<timestamp>_<random>.<ext>."""
+    base = f"output_{int(time.time() * 1000)}_{random.randint(10000, 99999)}"
+    return f"{base}.{ext}"
+
+
+def _resolve_save_path(config: Dict[str, Any], default_ext: str) -> str:
+    """Resolve output path: use config path if absolute, else DEFAULT_SAVE_DIR/<random filename>."""
+    raw = (config.get("path") or config.get("output_path") or "").strip()
+    if raw and os.path.isabs(raw):
+        return raw
+    if raw:
+        name = os.path.basename(raw)
+    else:
+        name = _random_output_filename(default_ext)
+    return os.path.join(DEFAULT_SAVE_DIR, name)
 
 
 # Map stage_id → stage name (used by _PreprocessStage, _DetectStage, etc.)
@@ -127,7 +152,7 @@ def build_pipeline_with_taps(
             side_taps_by_stage[attach_stage].append(tap)
             logger.info(f"[PipelineBuilder] Created StreamTap {tap.tap_id} attached to {attach_stage}")
         elif side_tap.sink_type == "save_video":
-            path = config.get("path") or config.get("output_path") or f"output_{side_tap.node_id}.mp4"
+            path = _resolve_save_path(config, "mp4")
             fps = float(config.get("fps", 30.0))
             sink = SaveVideoSink(
                 sink_id=side_tap.node_id,
@@ -140,7 +165,7 @@ def build_pipeline_with_taps(
             side_taps_by_stage[attach_stage].append(sink)
             logger.info(f"[PipelineBuilder] Created SaveVideoSink {sink.sink_id} -> {path}")
         elif side_tap.sink_type == "save_image":
-            path = config.get("path") or config.get("output_path") or f"output_{side_tap.node_id}.jpg"
+            path = _resolve_save_path(config, "jpg")
             mode = str(config.get("mode", "overwrite"))
             sink = SaveImageSink(
                 sink_id=side_tap.node_id,
@@ -152,6 +177,16 @@ def build_pipeline_with_taps(
             save_sinks.append(sink)
             side_taps_by_stage[attach_stage].append(sink)
             logger.info(f"[PipelineBuilder] Created SaveImageSink {sink.sink_id} -> {path}")
+
+    # When graph has no StreamTap (e.g. Camera → SaveVideo only), add a preview tap so user can see video
+    if not stream_taps and plan.main_path:
+        source_node_id = plan.main_path[0]
+        preview_tap = StreamTap(tap_id="preview", attach_point=source_node_id)
+        stream_taps.append(preview_tap)
+        if "__source__" not in side_taps_by_stage:
+            side_taps_by_stage["__source__"] = []
+        side_taps_by_stage["__source__"].append(preview_tap)
+        logger.info("[PipelineBuilder] Added preview StreamTap (no StreamTap in graph)")
 
     # Allow zero stages when graph is source → StreamTap only (we have __source__ taps)
     if not stages and "__source__" not in side_taps_by_stage:

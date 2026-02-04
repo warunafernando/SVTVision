@@ -129,13 +129,11 @@ const VisionPipelinePage: React.FC = () => {
             if (name) setAlgorithmName(name);
           }}
           onPipelineStarted={(instanceId) => {
-            console.log('[Vision Pipeline] onPipelineStarted', { instanceId });
-            setRunningInstanceIds((prev) => {
-              const next = prev.includes(instanceId) ? prev : [...prev, instanceId];
-              console.log('[Vision Pipeline] setRunningInstanceIds (optimistic)', { instanceId, next });
-              return next;
+            queueMicrotask(() => {
+              console.log('[Vision Pipeline] onPipelineStarted', { instanceId });
+              setRunningInstanceIds((prev) => (prev.includes(instanceId) ? prev : [...prev, instanceId]));
+              refetchRunningInstances(instanceId);
             });
-            refetchRunningInstances(instanceId);
           }}
         />
       </div>

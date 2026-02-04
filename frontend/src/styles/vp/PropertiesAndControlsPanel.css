@@ -42,6 +42,18 @@
   border-bottom: 1px solid var(--border);
 }
 
+.vp-props-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+
+.vp-props-section-header .vp-props-section-title {
+  margin: 0;
+}
+
 .vp-props-section-title {
   font-size: 12px;
   font-weight: 600;
@@ -91,6 +103,29 @@
   color: var(--text-primary);
 }
 
+/* Hidden file input: off-screen so programmatic click() works (no pointer-events: none) */
+.vp-props-file-hidden {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.vp-props-location-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.vp-props-location-input {
+  flex: 1;
+  min-width: 0;
+}
+
 .vp-props-btn {
   display: block;
   width: 100%;
@@ -99,6 +134,28 @@
   border-radius: 4px;
   cursor: pointer;
   margin-bottom: 6px;
+}
+
+/* Browse button: keep inline in location row (override .vp-props-btn) */
+.vp-props-location-row .vp-props-btn-browse {
+  width: auto;
+  flex-shrink: 0;
+  margin-bottom: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  display: inline-block;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.vp-props-location-row .vp-props-btn-browse:hover {
+  background: var(--bg-tertiary);
+}
+
+.vp-props-location-row label.vp-props-btn-browse {
+  cursor: pointer;
+  margin-bottom: 0;
 }
 
 .vp-props-btn:last-child {
@@ -169,7 +226,8 @@
   min-width: 0;
 }
 
-.vp-props-run-row .vp-props-btn-primary {
+.vp-props-run-row .vp-props-btn-primary,
+.vp-props-run-row .vp-props-btn-danger {
   flex-shrink: 0;
 }
 

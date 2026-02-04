@@ -1,0 +1,61 @@
+{
+  "name": "image",
+  "description": "",
+  "nodes": [
+    {
+      "id": "n_ciuk4a5",
+      "type": "sink",
+      "sink_type": "stream_tap",
+      "name": "StreamTap",
+      "ports": {
+        "inputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_57j2128",
+      "type": "source",
+      "source_type": "image_file",
+      "name": "ImageFileSource",
+      "ports": {
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_df4cf9l",
+      "source_node": "n_57j2128",
+      "source_port": "frame",
+      "target_node": "n_ciuk4a5",
+      "target_port": "frame"
+    }
+  ],
+  "layout": {
+    "n_ciuk4a5": {
+      "x": 249.22415161132812,
+      "y": 197.9655303955078
+    },
+    "n_57j2128": {
+      "x": 34.5689697265625,
+      "y": 47.10345458984375
+    }
+  },
+  "updated_at": "2026-02-04T06:10:36.596272Z"
+}

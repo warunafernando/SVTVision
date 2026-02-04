@@ -33,18 +33,30 @@ export async function fetchPipelineInstances(): Promise<PipelineInstance[]> {
   return instances;
 }
 
+export interface StartPipelineOptions {
+  algorithmId?: string;
+  nodes?: { id: string; type: string; [k: string]: unknown }[];
+  edges?: { id: string; source_node: string; source_port: string; target_node: string; target_port: string }[];
+}
+
 export async function startPipeline(
-  algorithmId: string,
-  target: string
+  target: string,
+  options?: StartPipelineOptions
 ): Promise<{ id: string; state: string }> {
-  log('POST start pipeline', { algorithmId, target });
+  const hasGraph = options?.nodes != null && options?.edges != null && options.nodes.length > 0;
+  const body: Record<string, unknown> = {
+    target,
+    algorithm_id: options?.algorithmId ?? null,
+  };
+  if (hasGraph) {
+    body.nodes = options!.nodes;
+    body.edges = options!.edges;
+  }
+  log('POST start pipeline', { target, algorithmId: options?.algorithmId, inlineGraph: hasGraph });
   const response = await fetch(`${API_BASE}/pipelines`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      algorithm_id: algorithmId,
-      target,
-    }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
@@ -68,8 +80,19 @@ export async function stopPipeline(instanceId: string): Promise<{ id: string; st
   return response.json();
 }
 
+export async function stopAllPipelines(): Promise<{ stopped: number }> {
+  const response = await fetch(`${API_BASE}/pipelines/stop-all`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail || `Failed to stop all pipelines: ${response.statusText}`);
+  }
+  return response.json();
+}
+
 /** List StreamTaps for a running pipeline instance (Stage 7). */
-export async function fetchStreamTaps(instanceId: string): Promise<Record<string, { tap_id: string; attach_point: string; frame_count?: number; has_frame?: boolean }>> {
+export async function fetchStreamTaps(instanceId: string): Promise<Record<string, { tap_id: string; attach_point: string; frame_count?: number; has_frame?: boolean; fps?: number }>> {
   log('GET taps', { instanceId });
   const response = await fetch(`${API_BASE}/vp/taps/${instanceId}`);
   if (!response.ok) {

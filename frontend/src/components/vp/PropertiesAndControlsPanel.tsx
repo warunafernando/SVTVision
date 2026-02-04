@@ -3,7 +3,7 @@
  * Node properties, pipeline controls, load/save, running instances
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { VPNode, VPEdge } from '../../types';
 import { validateGraph } from '../../utils/vpApi';
 import {
@@ -18,6 +18,7 @@ import {
   fetchPipelineInstances,
   startPipeline,
   stopPipeline,
+  stopAllPipelines,
   PipelineInstance,
 } from '../../utils/pipelineApi';
 import StreamTapViewer from './StreamTapViewer';
@@ -73,6 +74,8 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
   const [algorithms, setAlgorithms] = useState<AlgorithmMeta[]>([]);
   const [streamTapViewerInstanceId, setStreamTapViewerInstanceId] = useState<string | null>(null);
   const [selectedRunCameraId, setSelectedRunCameraId] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const directoryInputRef = useRef<HTMLInputElement>(null);
 
   const loadCameras = async () => {
     try {
@@ -211,18 +214,38 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
     }
   };
 
+  const isFileSource = useMemo(() => {
+    const sources = nodes.filter(
+      (n) => n.type === 'source' && (n.source_type === 'video_file' || n.source_type === 'image_file')
+    );
+    if (sources.length !== 1) return false;
+    const path = (sources[0].config?.path as string) || (sources[0].config?.location as string) || '';
+    return path.trim().length > 0;
+  }, [nodes]);
+
   const handleRunPipeline = async () => {
-    if (!algorithmId) return;
-    const cam = selectedRunCameraId || cameras[0]?.id;
-    if (!cam) return;
+    const hasGraph = nodes.length > 0;
+    if (!hasGraph) {
+      setRunError('Add at least one node to the graph, then Run.');
+      return;
+    }
+    const target = isFileSource ? 'file' : (selectedRunCameraId || cameras[0]?.id);
+    if (!target) {
+      setRunError('Select a camera to run on, or use a VideoFile/ImageFile source with Location set.');
+      return;
+    }
     setLoading(true);
     setRunError(null);
     try {
-      console.log('[Vision Pipeline] Run started', { algorithmId, camera: cam });
-      const result = await startPipeline(algorithmId, cam);
-      loadInstances(result?.id ? { id: result.id, algorithm_id: algorithmId, target: cam } : undefined);
+      console.log('[Vision Pipeline] Run started', { target, algorithmId: algorithmId ?? '(unsaved)', nodes: nodes.length });
+      const result = await startPipeline(target, {
+        algorithmId: algorithmId ?? undefined,
+        nodes,
+        edges,
+      });
+      loadInstances(result?.id ? { id: result.id, algorithm_id: algorithmId ?? 'pipeline', target } : undefined);
       if (result?.id) onPipelineStarted?.(result.id);
-      console.log('[Vision Pipeline] Run succeeded', { algorithmId, camera: cam, instanceId: result?.id });
+      console.log('[Vision Pipeline] Run succeeded', { target, instanceId: result?.id });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to start pipeline';
       setRunError(msg);
@@ -242,6 +265,18 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
     }
   };
 
+  const handleStopAll = async () => {
+    setLoading(true);
+    try {
+      await stopAllPipelines();
+      loadInstances();
+    } catch (e) {
+      console.error('[Vision Pipeline] Stop all failed', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
 
   // Merge API instances with page's runningInstanceIds so we show the just-started instance even when GET returns []
@@ -252,6 +287,18 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
     }
     return [...byId.values()];
   }, [instances, runningInstanceIds]);
+
+  // Instance currently running for the selected camera (for Run → Stop button toggle)
+  const runningInstanceForSelectedCamera = useMemo(
+    () => displayInstances.find((inst) => inst.target === selectedRunCameraId && inst.state === 'running'),
+    [displayInstances, selectedRunCameraId]
+  );
+  // When source is video file, instance id is file:xxx
+  const runningInstanceForFile = useMemo(
+    () => displayInstances.find((inst) => String(inst.id).startsWith('file:') && inst.state === 'running'),
+    [displayInstances]
+  );
+  const runningInstance = runningInstanceForFile ?? runningInstanceForSelectedCamera;
 
   const handleDeletePipeline = async (id: string) => {
     if (!id) return;
@@ -277,10 +324,117 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
     }
   };
 
+  const handleDeleteAllPipelines = async () => {
+    if (algorithms.length === 0) return;
+    if (!window.confirm(`Delete all ${algorithms.length} saved pipeline(s)?`)) return;
+    setLoading(true);
+    setSaveError(null);
+    const ids = algorithms.map((a) => a.id);
+    try {
+      for (const id of ids) {
+        try {
+          await deleteAlgorithm(id);
+        } catch (err) {
+          console.error('[Vision Pipeline] Delete all: failed for', id, err);
+        }
+      }
+      loadAlgorithms();
+      if (algorithmId && ids.includes(algorithmId)) {
+        onAlgorithmIdChange?.(null);
+        onGraphLoad?.([], [], {}, 'Untitled');
+        setSaveName('Untitled');
+      }
+      setSelectedPipelineId('');
+      console.log('[Vision Pipeline] Delete all succeeded', { count: ids.length });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Delete all failed';
+      setSaveError(msg);
+      console.error('[Vision Pipeline] Delete all failed', msg, err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleConfigChange = (key: string, value: unknown) => {
     if (!selectedNode) return;
     const config = { ...(selectedNode.config || {}), [key]: value };
     onNodeConfigChange?.(selectedNode.id, config);
+  };
+
+  const openFilePicker = (accept: string) => {
+    if (!fileInputRef.current) return;
+    fileInputRef.current.accept = accept;
+    fileInputRef.current.value = '';
+    fileInputRef.current.click();
+  };
+
+  const DEFAULT_OUTPUT_FOLDER = '/home/svt/Documents';
+
+  const randomOutputFilename = (ext: 'mp4' | 'jpg') => {
+    const base = `output_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return `${base}.${ext}`;
+  };
+
+  const openDirectoryPicker = async () => {
+    if (!selectedNode) return;
+    const w = window as Window & { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> };
+    if (typeof w.showDirectoryPicker === 'function') {
+      try {
+        const handle = await w.showDirectoryPicker();
+        const handlePath = (handle as FileSystemDirectoryHandle & { path?: string }).path;
+        const dirPath = handlePath ?? DEFAULT_OUTPUT_FOLDER;
+        const isSink = selectedNode.sink_type === 'save_video' || selectedNode.sink_type === 'save_image';
+        const sep = dirPath.includes('\\') ? '\\' : '/';
+        const path = isSink
+          ? dirPath + sep + randomOutputFilename(selectedNode.sink_type === 'save_video' ? 'mp4' : 'jpg')
+          : dirPath;
+        handleConfigChange('path', path);
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') console.warn('[Vision Pipeline] showDirectoryPicker failed', err);
+      }
+      return;
+    }
+    if (directoryInputRef.current) {
+      directoryInputRef.current.value = '';
+      directoryInputRef.current.click();
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && selectedNode) {
+      const path = (file as File & { path?: string }).path ?? file.name;
+      handleConfigChange('path', path);
+    }
+    e.target.value = '';
+  };
+
+  const handleDirectorySelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const files = input.files;
+    if (!files?.length || !selectedNode) {
+      setTimeout(() => { input.value = ''; }, 0);
+      return;
+    }
+    const file = files[0] as File & { path?: string; webkitRelativePath?: string };
+    let dirPath = '';
+    if (file.path) {
+      dirPath = file.path.replace(/[/\\][^/\\]*$/, '');
+    } else if (file.webkitRelativePath) {
+      const parts = file.webkitRelativePath.split('/');
+      parts.pop();
+      dirPath = parts.join('/');
+    }
+    if (!dirPath) {
+      dirPath = DEFAULT_OUTPUT_FOLDER;
+    }
+    const isSink = selectedNode.sink_type === 'save_video' || selectedNode.sink_type === 'save_image';
+    const sep = dirPath.includes('\\') ? '\\' : '/';
+    const path = isSink
+      ? dirPath + sep + randomOutputFilename(selectedNode.sink_type === 'save_video' ? 'mp4' : 'jpg')
+      : dirPath;
+    handleConfigChange('path', path);
+    setTimeout(() => { input.value = ''; }, 0);
   };
 
   const getNodeLabel = (node: VPNode): string => {
@@ -348,6 +502,24 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
 
   return (
     <div className="vp-props-panel">
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="vp-props-file-hidden"
+        onChange={handleFileSelect}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+      <input
+        id="vp-directory-picker"
+        ref={directoryInputRef}
+        type="file"
+        className="vp-props-file-hidden"
+        onChange={handleDirectorySelect}
+        aria-hidden="true"
+        tabIndex={-1}
+        webkitdirectory="true"
+      />
       <div className="vp-props-scroll">
         <div className="vp-props-header">
           <h3 className="vp-props-title">Properties & Controls</h3>
@@ -365,9 +537,9 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
               <span className="vp-props-label">ID:</span>
               <span className="vp-props-value">{selectedNode.id}</span>
             </div>
-            {selectedNode.type === 'source' && (
+            {selectedNode.type === 'source' && selectedNode.source_type === 'camera' && (
               <div className="vp-props-row">
-                <span className="vp-props-label">Config:</span>
+                <span className="vp-props-label">Camera:</span>
                 <select
                   className="vp-props-select"
                   value={(selectedNode.config?.camera_id as string) || ''}
@@ -378,6 +550,66 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
                     <option key={c.id} value={c.id}>{c.custom_name || c.name || c.id}</option>
                   ))}
                 </select>
+              </div>
+            )}
+            {selectedNode.type === 'source' && (selectedNode.source_type === 'video_file' || selectedNode.source_type === 'image_file') && (
+              <div className="vp-props-row">
+                <span className="vp-props-label">Location:</span>
+                <div className="vp-props-location-row">
+                  <input
+                    type="text"
+                    className="vp-props-input vp-props-location-input"
+                    value={(selectedNode.config?.path as string) || ''}
+                    onChange={(e) => handleConfigChange('path', e.target.value)}
+                    placeholder="/home/svt/Documents/ (File or Folder to pick)"
+                  />
+                  <button
+                    type="button"
+                    className="vp-props-btn vp-props-btn-browse"
+                    onClick={() => openFilePicker(selectedNode.source_type === 'video_file' ? 'video/*,.mp4,.avi,.mov' : 'image/*,.jpg,.jpeg,.png,.bmp')}
+                    title="Browse for file"
+                  >
+                    File
+                  </button>
+                  <button
+                    type="button"
+                    className="vp-props-btn vp-props-btn-browse"
+                    onClick={openDirectoryPicker}
+                    title="Browse for folder"
+                  >
+                    Folder
+                  </button>
+                </div>
+              </div>
+            )}
+            {selectedNode.type === 'sink' && (selectedNode.sink_type === 'save_video' || selectedNode.sink_type === 'save_image') && (
+              <div className="vp-props-row">
+                <span className="vp-props-label">Location:</span>
+                <div className="vp-props-location-row">
+                  <input
+                    type="text"
+                    className="vp-props-input vp-props-location-input"
+                    value={(selectedNode.config?.path as string) || (selectedNode.config?.output_path as string) || ''}
+                    onChange={(e) => handleConfigChange('path', e.target.value)}
+                    placeholder="/home/svt/Documents/ (random filename from File/Folder)"
+                  />
+                  <button
+                    type="button"
+                    className="vp-props-btn vp-props-btn-browse"
+                    onClick={() => openFilePicker(selectedNode.sink_type === 'save_video' ? '.mp4,video/mp4' : '.jpg,.jpeg,.png,image/jpeg,image/png')}
+                    title="Browse for file"
+                  >
+                    File
+                  </button>
+                  <button
+                    type="button"
+                    className="vp-props-btn vp-props-btn-browse"
+                    onClick={openDirectoryPicker}
+                    title="Select folder (uses Select Folder dialog when supported)"
+                  >
+                    Folder
+                  </button>
+                </div>
               </div>
             )}
             {selectedNode.type === 'stage' && (
@@ -448,18 +680,23 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
           </select>
           <button
             type="button"
-            className="vp-props-btn vp-props-btn-primary"
-            onClick={handleRunPipeline}
-            disabled={loading || !algorithmId || !cameras.length || !selectedRunCameraId}
+            className={`vp-props-btn ${runningInstance ? 'vp-props-btn-danger' : 'vp-props-btn-primary'}`}
+            onClick={runningInstance ? () => handleStop(runningInstance.id) : handleRunPipeline}
+            disabled={
+              loading ||
+              (!!runningInstance ? false : nodes.length === 0) ||
+              (!runningInstance && !isFileSource && (!cameras.length || !selectedRunCameraId))
+            }
+            title={runningInstance ? 'Stop pipeline' : isFileSource ? 'Run pipeline from file' : 'Run pipeline on selected camera'}
           >
-            Run Pipeline
+            {runningInstance ? 'Stop Pipeline' : 'Run Pipeline'}
           </button>
         </div>
-        {!algorithmId && (
-          <p className="vp-props-hint">Save the pipeline first (name + Save Algorithm), then Run Pipeline.</p>
+        {nodes.length === 0 && (
+          <p className="vp-props-hint">Add nodes to the graph, then Run Pipeline. Saving is optional.</p>
         )}
-        {algorithmId && !cameras.length && (
-          <p className="vp-props-hint">No cameras available. Add or connect a camera from the Cameras page.</p>
+        {nodes.length > 0 && !cameras.length && !isFileSource && (
+          <p className="vp-props-hint">No cameras available. Add or connect a camera from the Cameras page, or use a VideoFile/ImageFile source with Location set.</p>
         )}
         {runError && <div className="vp-props-error">{runError}</div>}
         <div className="vp-props-save-row">
@@ -527,6 +764,15 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
           >
             Delete
           </button>
+          <button
+            type="button"
+            className="vp-props-btn vp-props-btn-small"
+            onClick={handleDeleteAllPipelines}
+            disabled={loading || algorithms.length === 0}
+            title="Delete all saved pipelines"
+          >
+            Delete all
+          </button>
         </div>
         {algorithms.length === 0 && (
           <p className="vp-props-empty">No saved pipelines</p>
@@ -535,7 +781,20 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
 
       {/* Running Pipelines */}
       <div className="vp-props-section">
-        <h4 className="vp-props-section-title">Running Pipelines</h4>
+        <div className="vp-props-section-header">
+          <h4 className="vp-props-section-title">Running Pipelines</h4>
+          {displayInstances.length > 0 && (
+            <button
+              type="button"
+              className="vp-props-btn vp-props-btn-small vp-props-btn-close"
+              onClick={handleStopAll}
+              disabled={loading}
+              title="Remove all pipelines"
+            >
+              Remove all
+            </button>
+          )}
+        </div>
         {displayInstances.length === 0 ? (
           <p className="vp-props-empty">No pipelines running</p>
         ) : (
@@ -567,6 +826,9 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
               </li>
             ))}
           </ul>
+        )}
+        {displayInstances.length > 0 && (
+          <p className="vp-props-hint">Click <strong>View tap</strong> to see live video. Add a <strong>StreamTap</strong> sink to the graph to see video in the node and in View tap alongside SaveVideo.</p>
         )}
         {streamTapViewerInstanceId && (
           <StreamTapViewer

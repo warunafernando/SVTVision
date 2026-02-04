@@ -89,7 +89,8 @@
   color: #4ec9b0;
 }
 
-.vp-streamtap-frames {
+.vp-streamtap-frames,
+.vp-streamtap-fps {
   font-size: 11px;
   color: #858585;
 }

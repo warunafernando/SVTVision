@@ -1,0 +1,10 @@
+{
+  "target": "usb-Arducam_202500915_0001-6-1",
+  "nodes": [
+    {"id": "n1", "type": "source", "source_type": "camera"},
+    {"id": "sv1", "type": "sink", "sink_type": "save_video"}
+  ],
+  "edges": [
+    {"id": "e1", "source_node": "n1", "source_port": "frame", "target_node": "sv1", "target_port": "frame"}
+  ]
+}

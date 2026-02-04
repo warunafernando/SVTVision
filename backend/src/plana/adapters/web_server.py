@@ -234,19 +234,27 @@ class WebServerAdapter:
 
         @self.app.post("/api/pipelines")
         async def post_pipelines(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
-            algorithm_id = request.get("algorithm_id", "")
             target = request.get("target")
-            if not algorithm_id:
-                raise HTTPException(status_code=400, detail="algorithm_id is required")
             if not target:
                 raise HTTPException(status_code=400, detail="target (camera_id) is required")
-            instance_id, err_msg = self.vision_pipeline_manager.start(algorithm_id, target)
+            algorithm_id = request.get("algorithm_id") or None
+            nodes = request.get("nodes")
+            edges = request.get("edges")
+            has_inline = isinstance(nodes, list) and isinstance(edges, list) and len(nodes) > 0
+            if not has_inline and not algorithm_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Provide algorithm_id (saved pipeline) or nodes and edges (current graph).",
+                )
+            instance_id, err_msg = self.vision_pipeline_manager.start(
+                target=target, algorithm_id=algorithm_id, nodes=nodes if has_inline else None, edges=edges if has_inline else None
+            )
             if not instance_id:
                 raise HTTPException(
                     status_code=500,
-                    detail=err_msg or "Failed to start pipeline. Save the pipeline first, then ensure the camera is available.",
+                    detail=err_msg or "Failed to start pipeline. Ensure the camera is open and the graph is valid.",
                 )
-            self.logger.info(f"[WebServer] POST /api/pipelines started instance_id={instance_id} algorithm_id={algorithm_id} target={target}")
+            self.logger.info(f"[WebServer] POST /api/pipelines started instance_id={instance_id} target={target}")
             return {"id": instance_id, "state": "running"}
 
         @self.app.post("/api/pipelines/{instance_id}/stop")
@@ -255,6 +263,11 @@ class WebServerAdapter:
             if not success:
                 raise HTTPException(status_code=404, detail="Pipeline instance not found or already stopped")
             return {"id": instance_id, "state": "stopped"}
+
+        @self.app.post("/api/pipelines/stop-all")
+        async def post_pipelines_stop_all() -> Dict[str, Any]:
+            stopped = self.vision_pipeline_manager.stop_all()
+            return {"stopped": stopped}
 
         # Camera discovery endpoints
         @self.app.get("/api/cameras")
@@ -753,9 +766,16 @@ class WebServerAdapter:
         async def stream_tap_video(websocket: WebSocket, instance_id: str, tap_id: str):
             """WebSocket endpoint for StreamTap video streaming (Stage 7)."""
             await websocket.accept()
-            
             tap = self.vision_pipeline_manager.get_stream_tap(instance_id, tap_id)
             if not tap:
+                self.logger.warning(f"[StreamTap] Tap not found instance_id={instance_id!r} tap_id={tap_id!r}")
+                try:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"StreamTap {tap_id} not found for instance {instance_id}",
+                    })
+                except Exception:
+                    pass
                 await websocket.close(code=1008, reason=f"StreamTap {tap_id} not found for instance {instance_id}")
                 return
 

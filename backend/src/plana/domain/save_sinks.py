@@ -46,7 +46,13 @@ class SaveVideoSink:
                 return
             h, w = frame.shape[:2]
             if self._writer is None:
-                os.makedirs(os.path.dirname(self.output_path) or ".", exist_ok=True)
+                try:
+                    d = os.path.dirname(self.output_path) or "."
+                    os.makedirs(d, exist_ok=True)
+                except OSError as e:
+                    if self.logger:
+                        self.logger.error(f"[SaveVideo] Cannot create directory for {self.output_path}: {e}")
+                    return
                 fourcc_code = cv2.VideoWriter_fourcc(*self.fourcc)
                 self._writer = cv2.VideoWriter(
                     self.output_path,
@@ -56,12 +62,14 @@ class SaveVideoSink:
                     isColor=(len(frame.shape) == 3 and frame.shape[2] >= 3),
                 )
                 if not self._writer.isOpened():
+                    self._writer.release()
+                    self._writer = None
                     if self.logger:
-                        self.logger.error(f"[SaveVideo] Failed to open {self.output_path}")
+                        self.logger.error(f"[SaveVideo] Failed to open {self.output_path} (fourcc={self.fourcc})")
                     return
                 if self.logger:
                     self.logger.info(f"[SaveVideo] Opened {self.output_path} {w}x{h} @ {self.fps}fps")
-            if self._writer.isOpened():
+            if self._writer is not None and self._writer.isOpened():
                 self._writer.write(frame)
                 self._frame_count += 1
 
@@ -124,7 +132,13 @@ class SaveImageSink:
                 suffix = base.suffix or ".jpg"
                 parent = base.parent
                 path = str(parent / f"{stem}_{self._sequence:05d}{suffix}")
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            try:
+                d = os.path.dirname(path) or "."
+                os.makedirs(d, exist_ok=True)
+            except OSError as e:
+                if self.logger:
+                    self.logger.error(f"[SaveImage] Cannot create directory for {path}: {e}")
+                return
             try:
                 success = cv2.imwrite(path, frame)
                 if success:

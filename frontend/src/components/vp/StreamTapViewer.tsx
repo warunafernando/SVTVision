@@ -13,7 +13,7 @@ interface StreamTapViewerProps {
 }
 
 const StreamTapViewer: React.FC<StreamTapViewerProps> = ({ instanceId, onClose }) => {
-  const [taps, setTaps] = useState<Record<string, { tap_id: string; attach_point: string }>>({});
+  const [taps, setTaps] = useState<Record<string, { tap_id: string; attach_point: string; fps?: number }>>({});
   const [selectedTapId, setSelectedTapId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +49,7 @@ const StreamTapViewer: React.FC<StreamTapViewerProps> = ({ instanceId, onClose }
 
   useEffect(() => {
     if (!selectedTapId) return;
+    setError(null);
     const wsUrl = `${wsHost}/ws/vp/tap/${instanceId}/${encodeURIComponent(selectedTapId)}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -59,6 +60,10 @@ const StreamTapViewer: React.FC<StreamTapViewerProps> = ({ instanceId, onClose }
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        if (data.type === 'error') {
+          setError(data.message || 'StreamTap error');
+          return;
+        }
         if (data.type === 'frame' && data.data && imgRef.current) {
           imgRef.current.src = `data:image/jpeg;base64,${data.data}`;
           setFrameCount((n) => n + 1);
@@ -68,11 +73,15 @@ const StreamTapViewer: React.FC<StreamTapViewerProps> = ({ instanceId, onClose }
       }
     };
     ws.onerror = () => {
-      const msg = 'WebSocket error';
-      setError(msg);
-      console.error('[Vision Pipeline] StreamTap WebSocket error', msg);
+      setError((e) => e || 'WebSocket error');
+      console.error('[Vision Pipeline] StreamTap WebSocket error');
     };
-    ws.onclose = () => setConnected(false);
+    ws.onclose = (ev) => {
+      setConnected(false);
+      if (ev.code !== 1000 && ev.code !== 1005) {
+        setError((e) => e || ev.reason || 'Connection closed');
+      }
+    };
 
     return () => {
       ws.close();
@@ -137,7 +146,14 @@ const StreamTapViewer: React.FC<StreamTapViewerProps> = ({ instanceId, onClose }
           <span className={`vp-streamtap-status ${connected ? 'connected' : 'disconnected'}`}>
             {connected ? '● Live' : '○ Connecting...'}
           </span>
-          {connected && <span className="vp-streamtap-frames">{frameCount} frames</span>}
+          {connected && (
+            <>
+              <span className="vp-streamtap-frames">{frameCount} frames</span>
+              {selectedTapId != null && taps[selectedTapId]?.fps != null && (
+                <span className="vp-streamtap-fps">{taps[selectedTapId].fps} fps</span>
+              )}
+            </>
+          )}
         </div>
         <div className="vp-streamtap-video">
           <img ref={imgRef} alt="StreamTap output" />

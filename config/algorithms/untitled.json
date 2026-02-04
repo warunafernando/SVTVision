@@ -1,9 +1,9 @@
 {
-  "name": "direct_video",
+  "name": "Untitled",
   "description": "",
   "nodes": [
     {
-      "id": "n_7y869o4",
+      "id": "n_4ap1v36",
       "type": "source",
       "source_type": "camera",
       "name": "CameraSource",
@@ -15,13 +15,10 @@
             "type": "frame"
           }
         ]
-      },
-      "config": {
-        "camera_id": "usb-Arducam_202500915_0001-8-1"
       }
     },
     {
-      "id": "n_m22yif2",
+      "id": "n_fwnth38",
       "type": "sink",
       "sink_type": "stream_tap",
       "name": "StreamTap",
@@ -43,22 +40,22 @@
   ],
   "edges": [
     {
-      "id": "e_qlco7ws",
-      "source_node": "n_7y869o4",
+      "id": "e_05lb8my",
+      "source_node": "n_4ap1v36",
       "source_port": "frame",
-      "target_node": "n_m22yif2",
+      "target_node": "n_fwnth38",
       "target_port": "frame"
     }
   ],
   "layout": {
-    "n_7y869o4": {
-      "x": 97.103759765625,
+    "n_4ap1v36": {
+      "x": 89.49678039550781,
       "y": 0
     },
-    "n_m22yif2": {
-      "x": 301.2242126464844,
-      "y": 7.129947662353516
+    "n_fwnth38": {
+      "x": 374.7582702636719,
+      "y": 29.95086669921875
     }
   },
-  "updated_at": "2026-02-02T01:03:16.212779Z"
+  "updated_at": "2026-02-02T04:59:42.504945Z"
 }
