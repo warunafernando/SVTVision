@@ -75,6 +75,17 @@ export async function removeVPStage(stageId: string): Promise<{ ok: boolean; id:
   return response.json();
 }
 
+/** Runtime mode for stages that support GPU/CPU (e.g. preprocess_gpu). */
+export type StageRuntimeMode = 'gpu' | 'cpu';
+
+export async function fetchStageRuntimes(): Promise<Record<string, StageRuntimeMode>> {
+  const response = await fetch(`${API_BASE}/vp/stage-runtimes`);
+  if (!response.ok) {
+    return {};
+  }
+  return response.json();
+}
+
 export interface ValidateResult {
   valid: boolean;
   errors?: string[];

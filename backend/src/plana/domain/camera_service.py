@@ -306,6 +306,7 @@ class CameraService:
     def _vision_pipeline_loop(self) -> None:
         """Consumer thread: pull raw from each camera's queue; run pipeline or encode to JPEG for stream."""
         import cv2
+        from ..adapters.gpu_frame_encoder import encode_frame_to_jpeg
         self.logger.info("[CameraService] Consumer loop started (pipeline + encode for all cameras)")
         while self.vision_pipeline_running:
             processed_any = False
@@ -337,9 +338,8 @@ class CameraService:
                                 frame_to_encode = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
                             else:
                                 frame_to_encode = raw_frame
-                            _, jpeg_bytes = cv2.imencode(".jpg", frame_to_encode, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                            if jpeg_bytes is not None:
-                                frame_data = jpeg_bytes.tobytes()
+                            frame_data = encode_frame_to_jpeg(frame_to_encode, quality=85)
+                            if frame_data:
                                 with manager.frame_queue_lock:
                                     manager.frame_queue.append(frame_data)
                                 with manager.metrics_lock:

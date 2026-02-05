@@ -1,0 +1,16 @@
+MANIFEST.in
+Makefile
+README.md
+nvjpeg-python.cpp
+setup.cfg
+setup.py
+include/JpegCoder.hpp
+pynvjpeg.egg-info/PKG-INFO
+pynvjpeg.egg-info/SOURCES.txt
+pynvjpeg.egg-info/dependency_links.txt
+pynvjpeg.egg-info/requires.txt
+pynvjpeg.egg-info/top_level.txt
+src/jetson/JpegCoder.cpp
+src/jetson/Utils/ColorSpace.cu
+src/jetson/Utils/ColorSpace.hpp
+src/x86/JpegCoder.cpp

@@ -5,11 +5,12 @@ Holds the latest frame from a pipeline node for WebSocket streaming.
 
 import threading
 import time
-import cv2
 import numpy as np
 from collections import deque
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
+
+from ..adapters.gpu_frame_encoder import encode_frame_to_jpeg
 
 
 @dataclass
@@ -20,11 +21,9 @@ class StreamTapFrame:
     jpeg_bytes: Optional[bytes] = None
 
     def get_jpeg_bytes(self) -> bytes:
-        """Lazy encode frame to JPEG."""
+        """Lazy encode frame to JPEG (GPU when available, else CPU)."""
         if self.jpeg_bytes is None:
-            encode_params = [cv2.IMWRITE_JPEG_QUALITY, 85]
-            _, buf = cv2.imencode('.jpg', self.frame, encode_params)
-            self.jpeg_bytes = buf.tobytes() if buf is not None else b''
+            self.jpeg_bytes = encode_frame_to_jpeg(self.frame, quality=85)
         return self.jpeg_bytes
 
 

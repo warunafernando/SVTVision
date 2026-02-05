@@ -221,11 +221,6 @@
   align-items: center;
 }
 
-.vp-props-run-row .vp-props-run-camera {
-  flex: 1;
-  min-width: 0;
-}
-
 .vp-props-run-row .vp-props-btn-primary,
 .vp-props-run-row .vp-props-btn-danger {
   flex-shrink: 0;

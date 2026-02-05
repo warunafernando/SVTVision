@@ -1,0 +1,8 @@
+# Optional: GPU acceleration (preprocess + JPEG encoding).
+# Install only if you have NVIDIA GPU + CUDA (e.g. pip install -r requirements-gpu.txt).
+# Requires: CUDA >= 10.2, Linux x86_64 or Jetson.
+# - CuPy: Preprocess (GPU) stage without OpenCV (grayscale, blur, threshold, morphology on GPU).
+#   Install the wheel that matches your CUDA version: cupy-cuda12x or cupy-cuda11x (see https://docs.cupy.dev/en/stable/install.html).
+# - pynvjpeg: GPU-accelerated JPEG encoding for streaming.
+cupy-cuda12x>=12.0.0
+pynvjpeg>=0.0.13

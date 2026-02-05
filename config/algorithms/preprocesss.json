@@ -1,0 +1,101 @@
+{
+  "name": "preprocesss",
+  "description": "",
+  "nodes": [
+    {
+      "id": "n_ks1hhgl",
+      "type": "source",
+      "source_type": "camera",
+      "name": "CameraSource",
+      "ports": {
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_ih68mpz",
+      "type": "stage",
+      "stage_id": "preprocess_cpu",
+      "name": "Preprocess (CPU)",
+      "ports": {
+        "inputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      },
+      "config": {
+        "blur_kernel_size": 3,
+        "threshold_type": "adaptive",
+        "adaptive_block_size": 15,
+        "adaptive_c": 3,
+        "binary_threshold": 127,
+        "morphology": false,
+        "morph_kernel_size": 3
+      }
+    },
+    {
+      "id": "n_7g6l8h6",
+      "type": "sink",
+      "sink_type": "stream_tap",
+      "name": "StreamTap",
+      "ports": {
+        "inputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_gcb5s6c",
+      "source_node": "n_ks1hhgl",
+      "source_port": "frame",
+      "target_node": "n_ih68mpz",
+      "target_port": "frame"
+    },
+    {
+      "id": "e_24gz4uw",
+      "source_node": "n_ih68mpz",
+      "source_port": "frame",
+      "target_node": "n_7g6l8h6",
+      "target_port": "frame"
+    }
+  ],
+  "layout": {
+    "n_ks1hhgl": {
+      "x": 229.39657592773438,
+      "y": 0
+    },
+    "n_ih68mpz": {
+      "x": 358.7069091796875,
+      "y": 98.82759857177734
+    },
+    "n_7g6l8h6": {
+      "x": 546.637939453125,
+      "y": 231.5862274169922
+    }
+  },
+  "updated_at": "2026-02-04T06:22:28.834623Z"
+}

@@ -42,6 +42,26 @@ export const STAGE_ALGORITHM_SCHEMAS: StageAlgorithmSchema[] = [
     ],
   },
   {
+    id: 'preprocess_gpu',
+    label: 'Preprocess (GPU)',
+    ports: {
+      inputs: [{ name: 'frame', type: 'frame' }],
+      outputs: [{ name: 'frame', type: 'frame' }],
+    },
+    variables: [
+      { key: 'blur_kernel_size', label: 'Blur kernel size', type: 'number', default: 3, min: 1, max: 21 },
+      { key: 'threshold_type', label: 'Threshold type', type: 'select', default: 'adaptive', options: [
+        { value: 'adaptive', label: 'Adaptive' },
+        { value: 'binary', label: 'Binary' },
+      ]},
+      { key: 'adaptive_block_size', label: 'Adaptive block size', type: 'number', default: 15, min: 3, max: 51 },
+      { key: 'adaptive_c', label: 'Adaptive C', type: 'number', default: 3, min: 0, max: 20 },
+      { key: 'binary_threshold', label: 'Binary threshold', type: 'number', default: 127, min: 0, max: 255 },
+      { key: 'morphology', label: 'Morphology', type: 'boolean', default: false },
+      { key: 'morph_kernel_size', label: 'Morph kernel size', type: 'number', default: 3, min: 1, max: 15 },
+    ],
+  },
+  {
     id: 'detect_apriltag_cpu',
     label: 'detect_apriltag_cpu',
     ports: {

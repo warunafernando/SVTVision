@@ -106,12 +106,12 @@ class OpenCVCameraAdapter(CameraPort):
                 # Convert grayscale to BGR format for JPEG encoding (same result but ensures 3 channels)
                 frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
             
-            # Encode as JPEG
-            _, jpeg_bytes = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            if jpeg_bytes is None:
+            # Encode as JPEG (GPU when available)
+            from .gpu_frame_encoder import encode_frame_to_jpeg
+            jpeg_bytes = encode_frame_to_jpeg(frame, quality=85)
+            if not jpeg_bytes:
                 return None
-            
-            return jpeg_bytes.tobytes()
+            return jpeg_bytes
             
         except Exception as e:
             self.logger.debug(f"[Camera] Error capturing frame: {e}")

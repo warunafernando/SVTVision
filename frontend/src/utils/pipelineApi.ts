@@ -80,6 +80,23 @@ export async function stopPipeline(instanceId: string): Promise<{ id: string; st
   return response.json();
 }
 
+/** Update preprocess stage config for a running instance (live apply). */
+export async function updatePipelineStageConfig(
+  instanceId: string,
+  config: Record<string, unknown>
+): Promise<{ ok: boolean }> {
+  const response = await fetch(`${API_BASE}/pipelines/${instanceId}/stage-config`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ config }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail || `Failed to update stage config: ${response.statusText}`);
+  }
+  return response.json();
+}
+
 export async function stopAllPipelines(): Promise<{ stopped: number }> {
   const response = await fetch(`${API_BASE}/pipelines/stop-all`, {
     method: 'POST',

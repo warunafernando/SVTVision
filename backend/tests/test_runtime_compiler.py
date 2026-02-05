@@ -91,6 +91,25 @@ def test_compile_source_to_stream_tap_only():
     assert plan.side_taps[0].attach_point == "n1"
 
 
+def test_compile_source_preprocess_stream_tap_no_svt_output():
+    """Graph CameraSource → Preprocess (CPU) → StreamTap compiles without SVTVisionOutput."""
+    nodes = [
+        _node("n1", "source", source_type="camera"),
+        _node("n2", "stage", stage_id="preprocess_cpu"),
+        _node("n3", "sink", sink_type="stream_tap"),
+    ]
+    edges = [
+        _edge("e1", "n1", "n2"),
+        _edge("e2", "n2", "n3"),
+    ]
+    plan = compile_graph(nodes, edges)
+    assert plan.main_path == ["n1", "n2"]
+    assert len(plan.side_taps) == 1
+    assert plan.side_taps[0].node_id == "n3"
+    assert plan.side_taps[0].sink_type == "stream_tap"
+    assert plan.side_taps[0].attach_point == "n2"
+
+
 def test_compile_requires_single_source():
     """Graph with two sources raises."""
     nodes = [

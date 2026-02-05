@@ -159,6 +159,12 @@ class WebServerAdapter:
                 raise HTTPException(status_code=400, detail="Not a custom stage or not found")
             return {"ok": True, "id": stage_id}
 
+        @self.app.get("/api/vp/stage-runtimes")
+        async def vp_stage_runtimes() -> Dict[str, str]:
+            """Return runtime mode for stages that support GPU/CPU (e.g. preprocess_gpu: 'gpu' or 'cpu')."""
+            from ..adapters.gpu_preprocess_adapter import get_preprocess_gpu_runtime
+            return {"preprocess_gpu": get_preprocess_gpu_runtime()}
+
         @self.app.get("/api/vp/algorithms")
         async def vp_algorithms() -> Dict[str, Any]:
             """Vision Pipeline algorithms (saved graphs)."""
@@ -263,6 +269,17 @@ class WebServerAdapter:
             if not success:
                 raise HTTPException(status_code=404, detail="Pipeline instance not found or already stopped")
             return {"id": instance_id, "state": "stopped"}
+
+        @self.app.patch("/api/pipelines/{instance_id}/stage-config")
+        async def patch_pipeline_stage_config(instance_id: str, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+            """Update preprocess stage config for a running instance (live apply)."""
+            config = body.get("config")
+            if not isinstance(config, dict):
+                raise HTTPException(status_code=400, detail="Body must include 'config' object")
+            ok = self.vision_pipeline_manager.update_instance_stage_config(instance_id, config)
+            if not ok:
+                raise HTTPException(status_code=404, detail="Instance not found or has no preprocess stage")
+            return {"ok": True}
 
         @self.app.post("/api/pipelines/stop-all")
         async def post_pipelines_stop_all() -> Dict[str, Any]:

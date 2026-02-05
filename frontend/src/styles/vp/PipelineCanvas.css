@@ -81,6 +81,10 @@
   font-family: inherit;
 }
 
+.vp-node-runtime-dot {
+  pointer-events: none;
+}
+
 .vp-node-delete {
   cursor: pointer;
 }

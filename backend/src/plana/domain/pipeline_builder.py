@@ -41,6 +41,7 @@ def _resolve_save_path(config: Dict[str, Any], default_ext: str) -> str:
 # Map stage_id → stage name (used by _PreprocessStage, _DetectStage, etc.)
 STAGE_ID_TO_NAME = {
     "preprocess_cpu": "preprocess",
+    "preprocess_gpu": "preprocess",
     "detect_apriltag_cpu": "detect",
     "overlay_cpu": "detect_overlay",
 }
@@ -70,6 +71,7 @@ def build_pipeline_with_taps(
     Caller must call close() on save_sinks when pipeline stops.
     """
     from ..adapters.preprocess_adapter import PreprocessAdapter
+    from ..adapters.gpu_preprocess_adapter import GpuPreprocessAdapter
     from ..adapters.apriltag_detector_adapter import AprilTagDetectorAdapter
     from .vision_pipeline import _PreprocessStage, _DetectStage, _OverlayStage
 
@@ -78,7 +80,8 @@ def build_pipeline_with_taps(
     stages: List[PipelineStagePort] = []
     node_id_to_stage_name: Dict[str, str] = {}
 
-    preprocessor = PreprocessAdapter(logger)
+    preprocessor_cpu = PreprocessAdapter(logger)
+    preprocessor_gpu = GpuPreprocessAdapter(logger)
     tag_family = "tag36h11"
     for node in nodes:
         if node.get("stage_id") == "detect_apriltag_cpu":
@@ -106,14 +109,28 @@ def build_pipeline_with_taps(
 
         stage_name = STAGE_ID_TO_NAME.get(stage_id)
         if stage_id == "preprocess_cpu":
-            preprocessor.set_config({
+            preprocessor_cpu.set_config({
                 "blur_kernel_size": config.get("blur_kernel_size", 3),
                 "adaptive_block_size": config.get("adaptive_block_size", 15),
                 "adaptive_c": config.get("adaptive_c", 3),
                 "threshold_type": config.get("threshold_type", "adaptive"),
+                "binary_threshold": config.get("binary_threshold", 127),
                 "morphology": config.get("morphology", False),
+                "morph_kernel_size": config.get("morph_kernel_size", 3),
             })
-            stages.append(_PreprocessStage(preprocessor))
+            stages.append(_PreprocessStage(preprocessor_cpu))
+            node_id_to_stage_name[node_id] = "preprocess"
+        elif stage_id == "preprocess_gpu":
+            preprocessor_gpu.set_config({
+                "blur_kernel_size": config.get("blur_kernel_size", 3),
+                "adaptive_block_size": config.get("adaptive_block_size", 15),
+                "adaptive_c": config.get("adaptive_c", 3),
+                "threshold_type": config.get("threshold_type", "adaptive"),
+                "binary_threshold": config.get("binary_threshold", 127),
+                "morphology": config.get("morphology", False),
+                "morph_kernel_size": config.get("morph_kernel_size", 3),
+            })
+            stages.append(_PreprocessStage(preprocessor_gpu))
             node_id_to_stage_name[node_id] = "preprocess"
         elif stage_id == "detect_apriltag_cpu":
             stages.append(_DetectStage(tag_detector))

@@ -236,6 +236,7 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
     }
     setLoading(true);
     setRunError(null);
+    if (!isFileSource && target) setSelectedRunCameraId(target);
     try {
       console.log('[Vision Pipeline] Run started', { target, algorithmId: algorithmId ?? '(unsaved)', nodes: nodes.length });
       const result = await startPipeline(target, {
@@ -359,6 +360,14 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
     if (!selectedNode) return;
     const config = { ...(selectedNode.config || {}), [key]: value };
     onNodeConfigChange?.(selectedNode.id, config);
+    // Live apply: push preprocess config to running pipeline so next frame uses new settings
+    if (
+      runningInstanceIds?.length &&
+      selectedNode.type === 'stage' &&
+      (selectedNode.stage_id === 'preprocess_cpu' || selectedNode.stage_id === 'preprocess_gpu')
+    ) {
+      updatePipelineStageConfig(runningInstanceIds[0], config).catch(() => {});
+    }
   };
 
   const openFilePicker = (accept: string) => {
@@ -664,20 +673,6 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
           </div>
         )}
         <div className="vp-props-run-row">
-          <select
-            className="vp-props-select vp-props-run-camera"
-            value={selectedRunCameraId}
-            onChange={(e) => setSelectedRunCameraId(e.target.value)}
-            disabled={loading || cameras.length === 0}
-            title="Camera to run pipeline on"
-          >
-            <option value="">Select camera...</option>
-            {cameras.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.custom_name || c.name || c.id}
-              </option>
-            ))}
-          </select>
           <button
             type="button"
             className={`vp-props-btn ${runningInstance ? 'vp-props-btn-danger' : 'vp-props-btn-primary'}`}
@@ -685,7 +680,7 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
             disabled={
               loading ||
               (!!runningInstance ? false : nodes.length === 0) ||
-              (!runningInstance && !isFileSource && (!cameras.length || !selectedRunCameraId))
+              (!runningInstance && !isFileSource && !cameras.length)
             }
             title={runningInstance ? 'Stop pipeline' : isFileSource ? 'Run pipeline from file' : 'Run pipeline on selected camera'}
           >

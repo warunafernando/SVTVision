@@ -7,6 +7,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { VPNode, VPEdge } from '../../types';
 import { API_BASE } from '../../utils/config';
 import { fetchStreamTaps } from '../../utils/pipelineApi';
+import { fetchStageRuntimes } from '../../utils/vpApi';
 import '../../styles/vp/PipelineCanvas.css';
 
 function genId(prefix: string): string {
@@ -28,6 +29,8 @@ const NODE_HEIGHT = 42;
 const STREAMTAP_VIDEO_WIDTH = 160;
 const STREAMTAP_VIDEO_HEIGHT = 120;
 const PORT_SIZE = 11;
+/** Distance for Bezier control points so wire leaves/arrives at 90° to port surface */
+const EDGE_NORMAL_OFFSET = 48;
 
 /** Inline video for a StreamTap node: connects to tap WebSocket and displays frames. */
 const StreamTapNodeVideo: React.FC<{ instanceId: string; tapId: string }> = ({ instanceId, tapId }) => {
@@ -76,8 +79,13 @@ const PipelineCanvas: React.FC<PipelineCanvasProps> = ({
   const [wireFrom, setWireFrom] = useState<{ nodeId: string; port: string } | null>(null);
   const [dragNode, setDragNode] = useState<{ nodeId: string; startX: number; startY: number } | null>(null);
   const [taps, setTaps] = useState<Record<string, { tap_id: string; attach_point: string }>>({});
+  const [stageRuntimes, setStageRuntimes] = useState<Record<string, 'gpu' | 'cpu'>>({});
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchStageRuntimes().then(setStageRuntimes).catch(() => setStageRuntimes({}));
+  }, []);
 
   useEffect(() => {
     if (runningInstanceIds.length === 0) {
@@ -269,7 +277,7 @@ const PipelineCanvas: React.FC<PipelineCanvasProps> = ({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeId) {
+      if (e.key === 'Delete' && selectedNodeId) {
         e.preventDefault();
         deleteSelectedNode();
       }
@@ -284,6 +292,9 @@ const PipelineCanvas: React.FC<PipelineCanvasProps> = ({
 
   const getPos = (nodeId: string) => layout[nodeId] || { x: 0, y: 0 };
 
+  /** Source and stage: ports on top/bottom middle. Sink: ports on left/right (unchanged). */
+  const isSourceOrStage = (n: VPNode) => n.type === 'source' || n.type === 'stage';
+
   const getPortCoords = (nodeId: string, isOutput: boolean, portIndex: number, node?: VPNode) => {
     const pos = getPos(nodeId);
     const n = node ?? nodes.find((n) => n.id === nodeId);
@@ -291,8 +302,42 @@ const PipelineCanvas: React.FC<PipelineCanvasProps> = ({
     const h = n ? getNodeHeight(n) : NODE_HEIGHT;
     const ports = isOutput ? (n?.ports?.outputs || []) : (n?.ports?.inputs || []);
     const count = Math.max(1, ports.length);
+    if (n && isSourceOrStage(n)) {
+      const cx = pos.x + w / 2;
+      const cy = isOutput
+        ? pos.y + h - PORT_SIZE / 2 - (count - 1 - portIndex) * PORT_SIZE
+        : pos.y + PORT_SIZE / 2 + portIndex * PORT_SIZE;
+      return { cx, cy };
+    }
     const cy = pos.y + h / 2 - (count * PORT_SIZE) / 2 + portIndex * PORT_SIZE + PORT_SIZE / 2;
     const cx = isOutput ? pos.x + w : pos.x;
+    return { cx, cy };
+  };
+
+  /** Outward normal (dx, dy) from the node at this port: wire leaves output along this, arrives at input from opposite. */
+  const getPortNormal = (node: VPNode, isOutput: boolean, _portIndex: number): { dx: number; dy: number } => {
+    if (isSourceOrStage(node)) {
+      return isOutput ? { dx: 0, dy: 1 } : { dx: 0, dy: -1 }; // output bottom: down; input top: up
+    }
+    return isOutput ? { dx: 1, dy: 0 } : { dx: -1, dy: 0 };   // sink: output right, input left
+  };
+
+  /** Port position relative to node (0,0) for drawing. Source/stage: top/bottom middle; sink: left/right. */
+  const getPortPosRel = (node: VPNode, isOutput: boolean, portIndex: number) => {
+    const w = getNodeWidth(node);
+    const h = getNodeHeight(node);
+    const inputs = node.ports?.inputs || [];
+    const outputs = node.ports?.outputs || [];
+    const count = isOutput ? Math.max(1, outputs.length) : Math.max(1, inputs.length);
+    if (isSourceOrStage(node)) {
+      const cx = w / 2;
+      const cy = isOutput
+        ? h - PORT_SIZE / 2 - (count - 1 - portIndex) * PORT_SIZE
+        : PORT_SIZE / 2 + portIndex * PORT_SIZE;
+      return { cx, cy };
+    }
+    const cy = h / 2 - (count * PORT_SIZE) / 2 + portIndex * PORT_SIZE + PORT_SIZE / 2;
+    const cx = isOutput ? w : 0;
     return { cx, cy };
   };
 
@@ -300,7 +345,7 @@ const PipelineCanvas: React.FC<PipelineCanvasProps> = ({
     <div className="vp-canvas">
       <div className="vp-canvas-toolbar">
         <span className="vp-canvas-hint">
-          {wireFrom ? 'Click input port (left side) to connect' : selectedNodeId ? 'Press Delete to remove • Drag to move' : 'Drag nodes • Click output (right) then input (left) to wire'}
+          {wireFrom ? 'Click input port to connect' : selectedNodeId ? 'Press Delete to remove • Drag to move' : 'Drag nodes • Click output port then input port to wire'}
         </span>
       </div>
       <div
@@ -327,20 +372,24 @@ const PipelineCanvas: React.FC<PipelineCanvasProps> = ({
           {/* Edges */}
           <g className="vp-edges">
             {edges.map((edge) => {
-              const src = getPos(edge.source_node);
-              const tgt = getPos(edge.target_node);
               const srcNode = nodes.find((n) => n.id === edge.source_node);
-              const outIdx = srcNode?.ports?.outputs?.findIndex((p) => p.name === edge.source_port) ?? 0;
               const tgtNode = nodes.find((n) => n.id === edge.target_node);
-              const inIdx = tgtNode?.ports?.inputs?.findIndex((p) => p.name === edge.target_port) ?? 0;
-              const srcPort = getPortCoords(edge.source_node, true, Math.max(0, outIdx), srcNode ?? undefined);
-              const tgtPort = getPortCoords(edge.target_node, false, Math.max(0, inIdx), tgtNode ?? undefined);
-              const midX = (srcPort.cx + tgtPort.cx) / 2;
+              const outIdx = Math.max(0, srcNode?.ports?.outputs?.findIndex((p) => p.name === edge.source_port) ?? 0);
+              const inIdx = Math.max(0, tgtNode?.ports?.inputs?.findIndex((p) => p.name === edge.target_port) ?? 0);
+              const srcPort = getPortCoords(edge.source_node, true, outIdx, srcNode ?? undefined);
+              const tgtPort = getPortCoords(edge.target_node, false, inIdx, tgtNode ?? undefined);
+              const srcNorm = srcNode ? getPortNormal(srcNode, true, outIdx) : { dx: 0, dy: 1 };
+              const tgtNorm = tgtNode ? getPortNormal(tgtNode, false, inIdx) : { dx: 0, dy: -1 };
+              const k = EDGE_NORMAL_OFFSET;
+              const p1x = srcPort.cx + k * srcNorm.dx;
+              const p1y = srcPort.cy + k * srcNorm.dy;
+              const p2x = tgtPort.cx + k * tgtNorm.dx;
+              const p2y = tgtPort.cy + k * tgtNorm.dy;
               return (
                 <path
                   key={edge.id}
                   className="vp-edge-path"
-                  d={`M ${srcPort.cx} ${srcPort.cy} C ${midX} ${srcPort.cy}, ${midX} ${tgtPort.cy}, ${tgtPort.cx} ${tgtPort.cy}`}
+                  d={`M ${srcPort.cx} ${srcPort.cy} C ${p1x} ${p1y}, ${p2x} ${p2y}, ${tgtPort.cx} ${tgtPort.cy}`}
                   fill="none"
                   stroke="var(--status-ok)"
                   strokeWidth="2.5"
@@ -376,6 +425,17 @@ const PipelineCanvas: React.FC<PipelineCanvasProps> = ({
                     strokeWidth={isSelected ? 2 : 1}
                     onMouseDown={handleNodeMouseDown(node.id)}
                   />
+                  {node.type === 'stage' && node.stage_id === 'preprocess_gpu' && (
+                    <circle
+                      cx={10}
+                      cy={10}
+                      r={5}
+                      fill={stageRuntimes['preprocess_gpu'] === 'gpu' ? '#2563eb' : '#eab308'}
+                      stroke="var(--border)"
+                      strokeWidth={1}
+                      className="vp-node-runtime-dot"
+                    />
+                  )}
                   <foreignObject
                     x={0}
                     y={0}
@@ -429,34 +489,40 @@ const PipelineCanvas: React.FC<PipelineCanvasProps> = ({
                     <rect x={w - 17} y={2} width={14} height={14} rx="2" fill="var(--status-error)" opacity="0.9" />
                     <text x={w - 10} y={12} textAnchor="middle" fill="white" fontSize="10">×</text>
                   </g>
-                  {/* Input ports */}
-                  {inputs.map((p, i) => (
-                    <circle
-                      key={`in-${p.name}`}
-                      className="vp-port vp-port-input"
-                      cx={0}
-                      cy={h / 2 - (inputs.length * PORT_SIZE) / 2 + i * PORT_SIZE + PORT_SIZE / 2}
-                      r={PORT_SIZE / 2}
-                      fill="var(--text-secondary)"
-                      stroke="var(--border)"
-                      strokeWidth="1"
-                      onClick={handleInputPortClick(node.id, p.name)}
-                    />
-                  ))}
-                  {/* Output ports */}
-                  {outputs.map((p, i) => (
-                    <circle
-                      key={`out-${p.name}`}
-                      className="vp-port vp-port-output"
-                      cx={w}
-                      cy={h / 2 - (outputs.length * PORT_SIZE) / 2 + i * PORT_SIZE + PORT_SIZE / 2}
-                      r={PORT_SIZE / 2}
-                      fill="var(--status-ok)"
-                      stroke="var(--border)"
-                      strokeWidth="1"
-                      onClick={handleOutputPortClick(node.id, p.name)}
-                    />
-                  ))}
+                  {/* Input ports (source/stage: top middle; sink: left) */}
+                  {inputs.map((p, i) => {
+                    const { cx: px, cy: py } = getPortPosRel(node, false, i);
+                    return (
+                      <circle
+                        key={`in-${p.name}`}
+                        className="vp-port vp-port-input"
+                        cx={px}
+                        cy={py}
+                        r={PORT_SIZE / 2}
+                        fill="var(--text-secondary)"
+                        stroke="var(--border)"
+                        strokeWidth="1"
+                        onClick={handleInputPortClick(node.id, p.name)}
+                      />
+                    );
+                  })}
+                  {/* Output ports (source/stage: bottom middle; sink: right) */}
+                  {outputs.map((p, i) => {
+                    const { cx: px, cy: py } = getPortPosRel(node, true, i);
+                    return (
+                      <circle
+                        key={`out-${p.name}`}
+                        className="vp-port vp-port-output"
+                        cx={px}
+                        cy={py}
+                        r={PORT_SIZE / 2}
+                        fill="var(--status-ok)"
+                        stroke="var(--border)"
+                        strokeWidth="1"
+                        onClick={handleOutputPortClick(node.id, p.name)}
+                      />
+                    );
+                  })}
                 </g>
               );
             })}

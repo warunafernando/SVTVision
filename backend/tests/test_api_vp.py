@@ -27,7 +27,17 @@ def test_vp_stages_returns_registry(client: TestClient):
     assert isinstance(data["sinks"], list)
     stage_ids = [s["id"] for s in data["stages"]]
     assert "preprocess_cpu" in stage_ids
+    assert "preprocess_gpu" in stage_ids
     assert "detect_apriltag_cpu" in stage_ids
+
+
+def test_vp_stage_runtimes_returns_preprocess_gpu(client: TestClient):
+    """GET /api/vp/stage-runtimes returns preprocess_gpu runtime (gpu or cpu)."""
+    response = client.get("/api/vp/stage-runtimes")
+    assert response.status_code == 200
+    data = response.json()
+    assert "preprocess_gpu" in data
+    assert data["preprocess_gpu"] in ("gpu", "cpu")
 
 
 def test_vp_algorithms_returns_empty_list(client: TestClient):

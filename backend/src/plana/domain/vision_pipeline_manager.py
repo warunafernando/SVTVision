@@ -384,19 +384,31 @@ class VisionPipelineManager:
         if target and str(target).strip().lower() == "file":
             return None, "Add a VideoFile or ImageFile source to the graph, set its Location (path), then Run again."
 
-        # Camera source: require camera already open
+        # Camera source: open camera if not already open
         source_camera_id = self._camera_id_from_graph(algo)
         camera_id = source_camera_id if source_camera_id else target
         self.logger.info(f"[VisionPipelineManager] start: camera_id from graph={source_camera_id!r}, target={target!r}, using={camera_id!r}")
-
-        if not self.camera_service.is_camera_open(camera_id):
-            self.logger.error(f"[VisionPipelineManager] Camera {camera_id} not open")
-            return None, "Open the camera first. Use the Cameras page to open the camera, or ensure auto_start_cameras and camera config."
 
         camera_details = self.camera_discovery.get_camera_details(camera_id)
         if not camera_details:
             self.logger.error(f"[VisionPipelineManager] Camera {camera_id} not found")
             return None, f"Camera {camera_id} not found. Ensure the camera is connected and discoverable."
+
+        if not self.camera_service.is_camera_open(camera_id):
+            device_path = camera_details.get("device_path")
+            if not device_path:
+                self.logger.error(f"[VisionPipelineManager] Camera {camera_id} has no device_path")
+                return None, "Camera device path not available. Use the Cameras page to open the camera first."
+            self.logger.info(f"[VisionPipelineManager] Camera {camera_id} not open; opening with vision pipeline")
+            success = self.camera_service.open_camera(
+                camera_id,
+                device_path,
+                vision_pipeline=vision_pipeline,
+                stream_only=False,
+            )
+            if not success:
+                self.logger.error(f"[VisionPipelineManager] Failed to open camera {camera_id}")
+                return None, "Failed to open camera. Ensure your user is in the 'video' group (run: sudo usermod -aG video $USER, then log out and back in), and no other app is using the device."
 
         manager = self.camera_service.get_camera_manager(camera_id)
         if not manager:
@@ -476,6 +488,17 @@ class VisionPipelineManager:
         )
         metrics = manager.get_metrics() if manager else {}
         return inst.to_dict(metrics=metrics)
+
+    def update_instance_stage_config(self, instance_id: str, config: Dict[str, Any]) -> bool:
+        """Update preprocess stage config for a running instance (live apply). Returns True if updated."""
+        inst = self._instances.get(instance_id)
+        if inst and getattr(inst, "_vision_pipeline", None):
+            return inst._vision_pipeline.update_preprocess_config(config)
+        if not instance_id.startswith("file:") and self.camera_service.is_camera_open(instance_id):
+            manager = self.camera_service.get_camera_manager(instance_id)
+            if manager and getattr(manager, "vision_pipeline", None):
+                return manager.vision_pipeline.update_preprocess_config(config)
+        return False
 
     # Stage 7: StreamTap access
     def get_stream_tap(self, instance_id: str, tap_id: str) -> Optional[StreamTap]:

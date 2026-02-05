@@ -15,6 +15,7 @@ from ..ports.preprocess_port import PreprocessPort
 from ..ports.tag_detector_port import TagDetectorPort, TagDetection
 from ..ports.pipeline_stage_port import PipelineStagePort
 from ..services.logging_service import LoggingService
+from ..adapters.gpu_frame_encoder import encode_frame_to_jpeg
 
 
 class StageFrame:
@@ -28,9 +29,7 @@ class StageFrame:
 
     def get_jpeg_bytes(self) -> bytes:
         if self.jpeg_bytes is None:
-            encode_params = [cv2.IMWRITE_JPEG_QUALITY, 85]
-            _, jpeg_bytes = cv2.imencode('.jpg', self.frame, encode_params)
-            self.jpeg_bytes = jpeg_bytes.tobytes() if jpeg_bytes is not None else b''
+            self.jpeg_bytes = encode_frame_to_jpeg(self.frame, quality=85)
         return self.jpeg_bytes
 
 
@@ -225,6 +224,13 @@ class VisionPipeline:
             for s in self._stages:
                 out[s.name] = None
             return out
+
+    def update_preprocess_config(self, config: Dict[str, Any]) -> bool:
+        """Update config of the first preprocess stage (for live apply). Returns True if updated."""
+        for stage in self._stages:
+            if stage.name == "preprocess" and hasattr(stage, "_preprocessor"):
+                return stage._preprocessor.set_config(config)
+        return False
 
     def get_latest_frame(self, stage: str) -> Optional[StageFrame]:
         if stage == "raw":

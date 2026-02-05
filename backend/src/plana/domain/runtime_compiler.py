@@ -98,6 +98,19 @@ def _find_path_dfs(
     return None
 
 
+def _nodes_reachable_from(outgoing: Dict[str, List[tuple]], start: str) -> Set[str]:
+    """BFS: set of node ids reachable from start."""
+    reachable: Set[str] = {start}
+    queue: List[str] = [start]
+    while queue:
+        node = queue.pop(0)
+        for (nxt, _, _) in outgoing.get(node, []):
+            if nxt not in reachable:
+                reachable.add(nxt)
+                queue.append(nxt)
+    return reachable
+
+
 def compile_graph(
     nodes: List[Dict[str, Any]],
     edges: List[Dict[str, Any]],
@@ -157,19 +170,27 @@ def compile_graph(
             )
         main_path = path
     else:
-        # 3b. No SVTVisionOutput: allow graph if it has side taps from source (e.g. CameraSource → StreamTap only)
-        side_taps_from_source = [
+        # 3b. No SVTVisionOutput: allow graph if source (possibly via stages) feeds a side tap (e.g. CameraSource → Preprocess → StreamTap)
+        reachable = _nodes_reachable_from(outgoing, source.id)
+        side_tap_edges = [
             e for e in graph.edges
-            if e.source_node == source.id
+            if e.source_node in reachable
             and graph.get_node(e.target_node) is not None
             and getattr(graph.get_node(e.target_node), "sink_type", None) in SIDE_TAP_SINK_TYPES
         ]
-        if not side_taps_from_source:
+        if not side_tap_edges:
             raise GraphValidationError(
                 "No SVTVisionOutput sink found",
-                ["Graph must have an SVTVisionOutput sink or at least one StreamTap/SaveVideo/SaveImage from the source"],
+                ["Graph must have an SVTVisionOutput sink or a path from the source to at least one StreamTap/SaveVideo/SaveImage"],
             )
-        main_path = [source.id]
+        # Main path = longest path from source to any node that feeds a side tap
+        attach_points = {e.source_node for e in side_tap_edges}
+        best_path: List[str] = [source.id]
+        for ap in attach_points:
+            p = _find_path_dfs(graph, source.id, ap, outgoing, set(), [])
+            if p is not None and len(p) > len(best_path):
+                best_path = p
+        main_path = best_path
 
     main_path_set: Set[str] = set(main_path)
 
