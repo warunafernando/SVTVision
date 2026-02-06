@@ -103,10 +103,27 @@ def build_pipeline_with_taps(
         if ntype != "stage":
             continue
 
-        config = node_configs.get(node_id, {})
-        if not config:
-            config = {}
-
+        # Prefer raw node config from request (what the user set in the UI); fallback to plan's node_configs
+        raw_config = node.get("config")
+        if isinstance(raw_config, dict):
+            config = dict(raw_config)
+        else:
+            config = dict(node_configs.get(node_id, {}))
+        # Ensure defaults for preprocess so adapter always gets all keys
+        if stage_id in ("preprocess_cpu", "preprocess_gpu"):
+            _preprocess_defaults = {
+                "blur_kernel_size": 3, "adaptive_block_size": 15, "adaptive_c": 3,
+                "threshold_type": "adaptive", "adaptive_thresholding": False, "contrast_normalization": False,
+                "binary_threshold": 127, "morphology": False, "morph_kernel_size": 3,
+            }
+            for k, v in _preprocess_defaults.items():
+                if k not in config:
+                    config[k] = v
+            logger.info(
+                f"[PipelineBuilder] Preprocess {stage_id} node_id={node_id}: "
+                f"blur={config.get('blur_kernel_size')} adaptive_thr={config.get('adaptive_thresholding')} "
+                f"contrast_norm={config.get('contrast_normalization')} morph={config.get('morphology')}"
+            )
         stage_name = STAGE_ID_TO_NAME.get(stage_id)
         if stage_id == "preprocess_cpu":
             preprocessor_cpu.set_config({
@@ -114,6 +131,8 @@ def build_pipeline_with_taps(
                 "adaptive_block_size": config.get("adaptive_block_size", 15),
                 "adaptive_c": config.get("adaptive_c", 3),
                 "threshold_type": config.get("threshold_type", "adaptive"),
+                "adaptive_thresholding": config.get("adaptive_thresholding", False),
+                "contrast_normalization": config.get("contrast_normalization", False),
                 "binary_threshold": config.get("binary_threshold", 127),
                 "morphology": config.get("morphology", False),
                 "morph_kernel_size": config.get("morph_kernel_size", 3),
@@ -126,6 +145,8 @@ def build_pipeline_with_taps(
                 "adaptive_block_size": config.get("adaptive_block_size", 15),
                 "adaptive_c": config.get("adaptive_c", 3),
                 "threshold_type": config.get("threshold_type", "adaptive"),
+                "adaptive_thresholding": config.get("adaptive_thresholding", False),
+                "contrast_normalization": config.get("contrast_normalization", False),
                 "binary_threshold": config.get("binary_threshold", 127),
                 "morphology": config.get("morphology", False),
                 "morph_kernel_size": config.get("morph_kernel_size", 3),

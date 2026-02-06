@@ -14,7 +14,9 @@ class PreprocessAdapter(PreprocessPort):
         self.logger = logger
         self.config = {
             "blur_kernel_size": 3,  # Reduced blur for sharper edges (better for AprilTag)
-            "threshold_type": "adaptive",  # "adaptive" or "binary"
+            "threshold_type": "adaptive",  # "adaptive" or "binary" (used when adaptive_thresholding not set)
+            "adaptive_thresholding": False,  # Option: use adaptive threshold (default off = binary)
+            "contrast_normalization": False,  # Option: min-max contrast stretch after grayscale (default off)
             "adaptive_method": cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             "adaptive_threshold_type": cv2.THRESH_BINARY,
             "adaptive_block_size": 15,  # Increased for more stable threshold
@@ -48,8 +50,9 @@ class PreprocessAdapter(PreprocessPort):
             else:
                 blurred = gray
             
-            # Apply threshold
-            if self.config["threshold_type"] == "adaptive":
+            # Apply threshold (adaptive if option on, else binary)
+            use_adaptive = self.config.get("adaptive_thresholding", self.config.get("threshold_type") == "adaptive")
+            if use_adaptive:
                 # Adaptive threshold
                 thresholded = cv2.adaptiveThreshold(
                     blurred,
@@ -122,6 +125,11 @@ class PreprocessAdapter(PreprocessPort):
                 morph_size = int(config["morph_kernel_size"])
                 if morph_size >= 1:
                     self.config["morph_kernel_size"] = morph_size
+
+            if "adaptive_thresholding" in config:
+                self.config["adaptive_thresholding"] = bool(config["adaptive_thresholding"])
+            if "contrast_normalization" in config:
+                self.config["contrast_normalization"] = bool(config["contrast_normalization"])
             
             self.logger.info(f"[Preprocess] Preprocess config updated: {self.config}")
             return True

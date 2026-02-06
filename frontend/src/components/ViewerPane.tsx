@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Stage, Detection } from '../types';
-import { API_BASE } from '../utils/config';
+import { API_BASE, getWsBaseUrl } from '../utils/config';
 import '../styles/ViewerPane.css';
 
 interface ViewerPaneProps {
@@ -57,10 +57,7 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
     }
 
     // Connect to WebSocket stream (same origin as API)
-    const wsHost = API_BASE.startsWith('http')
-      ? API_BASE.replace(/^http/, 'ws').replace(/\/api\/?$/, '')
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-    const wsUrl = `${wsHost}/ws/stream?camera=${selectedCameraId}&stage=${selectedStage}`;
+    const wsUrl = `${getWsBaseUrl()}/ws/stream?camera=${selectedCameraId}&stage=${selectedStage}`;
     
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;

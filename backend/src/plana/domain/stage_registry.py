@@ -48,6 +48,8 @@ def _default_stages() -> List[Dict[str, Any]]:
                 {"key": "adaptive_block_size", "type": "number", "default": 15, "min": 3, "max": 51, "label": "Adaptive block size"},
                 {"key": "adaptive_c", "type": "number", "default": 3, "min": 0, "max": 20, "label": "Adaptive C"},
                 {"key": "binary_threshold", "type": "number", "default": 127, "min": 0, "max": 255, "label": "Binary threshold"},
+                {"key": "adaptive_thresholding", "type": "boolean", "default": False, "label": "Adaptive thresholding"},
+                {"key": "contrast_normalization", "type": "boolean", "default": False, "label": "Contrast normalization"},
                 {"key": "morphology", "type": "boolean", "default": False, "label": "Morphology"},
                 {"key": "morph_kernel_size", "type": "number", "default": 3, "min": 1, "max": 15, "label": "Morph kernel size"},
             ],

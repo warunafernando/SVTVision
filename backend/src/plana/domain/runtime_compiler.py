@@ -215,11 +215,10 @@ def compile_graph(
                 )
             )
 
-    # 5. Collect node configs for all nodes
+    # 5. Collect node configs for all nodes (include every node so pipeline_builder can apply settings)
     node_configs: Dict[str, Dict[str, Any]] = {}
     for n in graph.nodes:
-        if n.config is not None:
-            node_configs[n.id] = dict(n.config)
+        node_configs[n.id] = dict(n.config) if n.config is not None else {}
 
     return ExecutionPlan(
         main_path=main_path,

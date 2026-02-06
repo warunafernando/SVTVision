@@ -1,0 +1,101 @@
+{
+  "name": "PreprocessTest",
+  "description": "",
+  "nodes": [
+    {
+      "id": "n_gsa2v8a",
+      "type": "source",
+      "source_type": "camera",
+      "name": "CameraSource",
+      "ports": {
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_cg4znjp",
+      "type": "stage",
+      "stage_id": "preprocess_gpu",
+      "name": "Preprocess (GPU)",
+      "ports": {
+        "inputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      },
+      "config": {
+        "blur_kernel_size": 3,
+        "threshold_type": "adaptive",
+        "adaptive_block_size": 15,
+        "adaptive_c": 3,
+        "binary_threshold": 127,
+        "morphology": false,
+        "morph_kernel_size": 3
+      }
+    },
+    {
+      "id": "n_fjbifpk",
+      "type": "sink",
+      "sink_type": "stream_tap",
+      "name": "StreamTap",
+      "ports": {
+        "inputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "frame",
+            "type": "frame"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_r6hajru",
+      "source_node": "n_gsa2v8a",
+      "source_port": "frame",
+      "target_node": "n_cg4znjp",
+      "target_port": "frame"
+    },
+    {
+      "id": "e_jn62r0n",
+      "source_node": "n_cg4znjp",
+      "source_port": "frame",
+      "target_node": "n_fjbifpk",
+      "target_port": "frame"
+    }
+  ],
+  "layout": {
+    "n_gsa2v8a": {
+      "x": 152.67242431640625,
+      "y": 0
+    },
+    "n_cg4znjp": {
+      "x": 279.3965759277344,
+      "y": 92.7931137084961
+    },
+    "n_fjbifpk": {
+      "x": 406.9827880859375,
+      "y": 243.65518188476562
+    }
+  },
+  "updated_at": "2026-02-05T07:18:39.660979Z"
+}

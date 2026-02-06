@@ -238,10 +238,29 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
     setRunError(null);
     if (!isFileSource && target) setSelectedRunCameraId(target);
     try {
+      // Ensure every stage node has a full config (backend uses node.config for preprocess etc.)
+      const nodesWithConfig = nodes.map((n) => {
+        if (n.type !== 'stage' || !n.stage_id) return n;
+        const defaults = getDefaultConfigForAlgorithm(n.stage_id);
+        const raw = n.config || {};
+        const config: Record<string, unknown> = { ...defaults };
+        for (const [k, v] of Object.entries(raw)) {
+          if (v === undefined) continue;
+          const def = defaults[k];
+          if (typeof def === 'number' && typeof v !== 'number') config[k] = Number(v);
+          else if (typeof def === 'boolean' && typeof v !== 'boolean') config[k] = Boolean(v);
+          else config[k] = v;
+        }
+        return { ...n, config };
+      });
+      const firstPreprocess = nodesWithConfig.find((n) => n.type === 'stage' && (n.stage_id === 'preprocess_cpu' || n.stage_id === 'preprocess_gpu'));
+      if (firstPreprocess?.config) {
+        console.log('[Vision Pipeline] Sending preprocess config', firstPreprocess.id, firstPreprocess.config);
+      }
       console.log('[Vision Pipeline] Run started', { target, algorithmId: algorithmId ?? '(unsaved)', nodes: nodes.length });
       const result = await startPipeline(target, {
         algorithmId: algorithmId ?? undefined,
-        nodes,
+        nodes: nodesWithConfig,
         edges,
       });
       loadInstances(result?.id ? { id: result.id, algorithm_id: algorithmId ?? 'pipeline', target } : undefined);
@@ -360,13 +379,20 @@ const PropertiesAndControlsPanel: React.FC<PropertiesAndControlsPanelProps> = ({
     if (!selectedNode) return;
     const config = { ...(selectedNode.config || {}), [key]: value };
     onNodeConfigChange?.(selectedNode.id, config);
-    // Live apply: push preprocess config to running pipeline so next frame uses new settings
+    // Live apply: push full preprocess config to running pipeline so next frame uses new settings
     if (
       runningInstanceIds?.length &&
       selectedNode.type === 'stage' &&
       (selectedNode.stage_id === 'preprocess_cpu' || selectedNode.stage_id === 'preprocess_gpu')
     ) {
-      updatePipelineStageConfig(runningInstanceIds[0], config).catch(() => {});
+      const defaults = getDefaultConfigForAlgorithm(selectedNode.stage_id);
+      const fullConfig = { ...defaults, ...config };
+      const instanceId = displayInstances.find((i) => i.state === 'running')?.id ?? runningInstanceIds[0];
+      if (instanceId) {
+        updatePipelineStageConfig(instanceId, fullConfig)
+          .then(() => console.log('[Vision Pipeline] Live config applied to', instanceId))
+          .catch((err) => console.warn('[Vision Pipeline] Live config failed:', err));
+      }
     }
   };
 

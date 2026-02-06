@@ -229,7 +229,10 @@ class VisionPipeline:
         """Update config of the first preprocess stage (for live apply). Returns True if updated."""
         for stage in self._stages:
             if stage.name == "preprocess" and hasattr(stage, "_preprocessor"):
-                return stage._preprocessor.set_config(config)
+                ok = stage._preprocessor.set_config(config)
+                if ok:
+                    self.logger.info(f"[Pipeline] Live preprocess config applied: blur={config.get('blur_kernel_size')} adaptive_thr={config.get('adaptive_thresholding')} contrast_norm={config.get('contrast_normalization')}")
+                return ok
         return False
 
     def get_latest_frame(self, stage: str) -> Optional[StageFrame]:

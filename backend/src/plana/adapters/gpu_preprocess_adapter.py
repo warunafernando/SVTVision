@@ -43,10 +43,12 @@ class GpuPreprocessAdapter(PreprocessPort):
             self.logger.info("[Preprocess GPU] Using CuPy (no OpenCV in GPU path)")
         else:
             self.logger.info("[Preprocess GPU] CuPy not available, using OpenCV CPU fallback")
-        # Config keys match existing schema; values use int/str for portability (no cv2 in GPU path)
+        # Config keys match CPU preprocess (full parity); GPU path uses CuPy for all steps
         self.config = {
             "blur_kernel_size": 3,
             "threshold_type": "adaptive",
+            "adaptive_thresholding": False,
+            "contrast_normalization": False,
             "adaptive_method": getattr(cv2, "ADAPTIVE_THRESH_GAUSSIAN_C", 1),
             "adaptive_threshold_type": getattr(cv2, "THRESH_BINARY", 0),
             "adaptive_block_size": 15,
@@ -75,6 +77,12 @@ class GpuPreprocessAdapter(PreprocessPort):
                 gray = cp.clip(gray, 0, 255).astype(cp.uint8)
             else:
                 gray = cp.asarray(frame, dtype=cp.uint8)
+
+            # 1b) Optional: contrast normalization (min-max stretch)
+            if self.config.get("contrast_normalization", False):
+                gmin, gmax = float(cp.min(gray)), float(cp.max(gray))
+                if gmax > gmin:
+                    gray = cp.clip((gray.astype(cp.float32) - gmin) / (gmax - gmin) * 255, 0, 255).astype(cp.uint8)
 
             # 2) Gaussian blur
             blur_size = min(31, max(0, self.config["blur_kernel_size"]))
@@ -123,13 +131,19 @@ class GpuPreprocessAdapter(PreprocessPort):
             else:
                 gray = frame.copy()
 
+            if self.config.get("contrast_normalization", False):
+                gmin, gmax = gray.min(), gray.max()
+                if gmax > gmin:
+                    gray = np.clip((gray.astype(np.float32) - gmin) / (gmax - gmin) * 255, 0, 255).astype(np.uint8)
+
             blur_size = self.config["blur_kernel_size"]
             if blur_size > 0 and blur_size % 2 == 1:
                 blurred = cv2.GaussianBlur(gray, (blur_size, blur_size), 0)
             else:
                 blurred = gray
 
-            if self.config["threshold_type"] == "adaptive":
+            use_adaptive = self.config.get("adaptive_thresholding", self.config.get("threshold_type") == "adaptive")
+            if use_adaptive:
                 thresholded = cv2.adaptiveThreshold(
                     blurred, 255,
                     self.config["adaptive_method"],
@@ -182,6 +196,10 @@ class GpuPreprocessAdapter(PreprocessPort):
                 k = int(config["morph_kernel_size"])
                 if k >= 1:
                     self.config["morph_kernel_size"] = k
+            if "adaptive_thresholding" in config:
+                self.config["adaptive_thresholding"] = bool(config["adaptive_thresholding"])
+            if "contrast_normalization" in config:
+                self.config["contrast_normalization"] = bool(config["contrast_normalization"])
             return True
         except Exception as e:
             self.logger.error(f"[Preprocess GPU] set_config error: {e}")

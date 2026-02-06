@@ -5,9 +5,10 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { VPNode, VPEdge } from '../../types';
-import { API_BASE } from '../../utils/config';
+import { getWsBaseUrl } from '../../utils/config';
 import { fetchStreamTaps } from '../../utils/pipelineApi';
 import { fetchStageRuntimes } from '../../utils/vpApi';
+import { getDefaultConfigForAlgorithm } from '../../utils/stageAlgorithmSchemas';
 import '../../styles/vp/PipelineCanvas.css';
 
 function genId(prefix: string): string {
@@ -37,10 +38,7 @@ const StreamTapNodeVideo: React.FC<{ instanceId: string; tapId: string }> = ({ i
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   useEffect(() => {
-    const wsHost = API_BASE.startsWith('http')
-      ? API_BASE.replace(/^http/, 'ws').replace(/\/api\/?$/, '')
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-    const wsUrl = `${wsHost}/ws/vp/tap/${instanceId}/${encodeURIComponent(tapId)}`;
+    const wsUrl = `${getWsBaseUrl()}/ws/vp/tap/${instanceId}/${encodeURIComponent(tapId)}`;
     const ws = new WebSocket(wsUrl);
     ws.onopen = () => setConnected(true);
     ws.onmessage = (event) => {
@@ -136,6 +134,9 @@ const PipelineCanvas: React.FC<PipelineCanvasProps> = ({
       try {
         const data = JSON.parse(raw);
         const nodeId = genId('n');
+        const defaults = (data.type === 'stage' && data.stage_id)
+          ? getDefaultConfigForAlgorithm(data.stage_id)
+          : {};
         const node: VPNode = {
           id: nodeId,
           type: data.type || 'stage',
@@ -144,6 +145,7 @@ const PipelineCanvas: React.FC<PipelineCanvasProps> = ({
           sink_type: data.sink_type,
           name: data.name || data.paletteLabel,
           ports: data.ports || { inputs: [{ name: 'in', type: 'frame' }], outputs: [{ name: 'out', type: 'frame' }] },
+          config: Object.keys(defaults).length ? defaults : undefined,
         };
         const svgPt = screenToSvg(e.clientX, e.clientY);
         const x = Math.max(0, svgPt.x - NODE_WIDTH / 2);

@@ -252,6 +252,16 @@ class WebServerAdapter:
                     status_code=400,
                     detail="Provide algorithm_id (saved pipeline) or nodes and edges (current graph).",
                 )
+            if has_inline and nodes:
+                for n in nodes:
+                    if isinstance(n, dict) and n.get("type") == "stage" and n.get("stage_id") in ("preprocess_cpu", "preprocess_gpu"):
+                        cfg = n.get("config")
+                        self.logger.info(
+                            f"[WebServer] POST /api/pipelines received preprocess node id={n.get('id')!r} "
+                            f"config keys={list(cfg.keys()) if isinstance(cfg, dict) else 'none'!r} "
+                            f"blur={cfg.get('blur_kernel_size') if isinstance(cfg, dict) else None}"
+                        )
+                        break
             instance_id, err_msg = self.vision_pipeline_manager.start(
                 target=target, algorithm_id=algorithm_id, nodes=nodes if has_inline else None, edges=edges if has_inline else None
             )
@@ -278,7 +288,9 @@ class WebServerAdapter:
                 raise HTTPException(status_code=400, detail="Body must include 'config' object")
             ok = self.vision_pipeline_manager.update_instance_stage_config(instance_id, config)
             if not ok:
+                self.logger.warning(f"[WebServer] PATCH stage-config failed instance_id={instance_id!r} (not found or no preprocess stage)")
                 raise HTTPException(status_code=404, detail="Instance not found or has no preprocess stage")
+            self.logger.info(f"[WebServer] PATCH stage-config applied for instance_id={instance_id!r}")
             return {"ok": True}
 
         @self.app.post("/api/pipelines/stop-all")

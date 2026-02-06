@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { API_BASE } from '../../utils/config';
+import { getWsBaseUrl } from '../../utils/config';
 import { fetchStreamTaps } from '../../utils/pipelineApi';
 import '../../styles/vp/StreamTapPreview.css';
 
@@ -25,10 +25,6 @@ const StreamTapPreview: React.FC<StreamTapPreviewProps> = ({ instanceIds }) => {
   const [connected, setConnected] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-
-  const wsHost = API_BASE.startsWith('http')
-    ? API_BASE.replace(/^http/, 'ws').replace(/\/api\/?$/, '')
-    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
 
   // When we have running instances, pick first and load its taps
   useEffect(() => {
@@ -62,7 +58,7 @@ const StreamTapPreview: React.FC<StreamTapPreviewProps> = ({ instanceIds }) => {
       setConnected(false);
       return;
     }
-    const wsUrl = `${wsHost}/ws/vp/tap/${instanceId}/${encodeURIComponent(tapId)}`;
+    const wsUrl = `${getWsBaseUrl()}/ws/vp/tap/${instanceId}/${encodeURIComponent(tapId)}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     setConnected(false);
