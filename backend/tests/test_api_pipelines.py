@@ -16,7 +16,11 @@ def orchestrator():
     project_root = Path(__file__).resolve().parent.parent.parent
     config_dir = project_root / "config"
     frontend_dist = project_root / "frontend" / "dist"
-    return AppOrchestrator(config_dir, frontend_dist)
+    orch = AppOrchestrator(config_dir, frontend_dist)
+    try:
+        yield orch
+    finally:
+        orch.shutdown()
 
 
 @pytest.fixture

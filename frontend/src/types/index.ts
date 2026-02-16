@@ -11,6 +11,12 @@ export interface DebugTreeNode {
     latency?: number;
     drops?: number;
     lastUpdateAge?: number;
+    cpu_percent?: number | null;
+    gpu_percent?: number | null;
+    gpu_memory_used_mb?: number | null;
+    gpu_memory_total_mb?: number | null;
+    tags_detected?: number;
+    frames_processed?: number;
   };
   children?: DebugTreeNode[];
   expanded?: boolean;
@@ -21,6 +27,7 @@ export interface SystemInfo {
   buildId: string;
   health: HealthStatus;
   connection: ConnectionStatus;
+  compactUi?: boolean;
 }
 
 export interface Camera {

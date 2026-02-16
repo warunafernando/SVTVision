@@ -120,6 +120,10 @@ class VisionPipeline:
         self.frames_with_detections = 0
         self.total_detections_all_tags = 0
         self._stream_taps: Dict[str, List[Any]] = stream_taps or {}
+        self._frame_times: deque = deque(maxlen=60)  # for FPS
+        self._stage_timings_ms: Dict[str, deque] = {}  # rolling per-stage ms
+        for s in self._stages:
+            self._stage_timings_ms[s.name] = deque(maxlen=30)
         self.logger.info("[Pipeline] VisionPipeline initialized")
 
     @classmethod
@@ -138,31 +142,44 @@ class VisionPipeline:
     def process_frame(self, raw_frame: np.ndarray) -> Dict[str, Any]:
         """Run pipeline: raw → stage1 → stage2 → … Store each stage output; return frames + detections."""
         try:
-            raw_stage = StageFrame("raw", raw_frame)
+             # Convert raw into a displayable / pipeline-friendly representation.
+            # Some V4L2/OpenCV modes can return YUYV-like frames as HxWx2; treat those as YUY2.
+            raw_for_display = raw_frame
+            if getattr(raw_frame, "ndim", 0) == 3 and raw_frame.shape[2] == 2:
+                gray0 = cv2.cvtColor(raw_frame, cv2.COLOR_YUV2GRAY_YUY2)
+                raw_for_display = gray0
+
+            raw_stage = StageFrame("raw", raw_for_display)
             self.raw_frames.append(raw_stage)
 
             # Stage 7: Push raw frame to taps attached to source (CameraSource → StreamTap only)
             for tap in self._stream_taps.get("__source__", []):
                 try:
-                    tap.push_frame(raw_frame)
+                    tap.push_frame(raw_for_display)
                 except Exception as e:
                     self.logger.warning(f"[Pipeline] StreamTap __source__ dispatch error: {e}")
 
-            if len(raw_frame.shape) == 3:
-                gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
+            if getattr(raw_frame, "ndim", 0) == 3:
+                if raw_frame.shape[2] == 2:
+                    gray = cv2.cvtColor(raw_frame, cv2.COLOR_YUV2GRAY_YUY2)
+                else:
+                    gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
             else:
                 gray = raw_frame.copy()
 
-            context: Dict[str, Any] = {"raw_frame": raw_frame, "detections": []}
+            context: Dict[str, Any] = {"raw_frame": raw_for_display, "detections": []}
             frame = gray
             preprocess_stage = None
             detect_overlay_stage = None
 
             for stage in self._stages:
+                t0 = time.perf_counter()
                 if stage.name == "detect_overlay":
                     frame, context = stage.process(context["raw_frame"], context)
                 else:
                     frame, context = stage.process(frame, context)
+                elapsed_ms = (time.perf_counter() - t0) * 1000.0
+                self._stage_timings_ms[stage.name].append(elapsed_ms)
                 if frame is None:
                     if stage.name == "preprocess":
                         self.logger.warning("[Pipeline] Preprocessing failed, skipping detect stage")
@@ -214,6 +231,7 @@ class VisionPipeline:
                 )
 
             self.frames_processed += 1
+            self._frame_times.append(time.time())
             out: Dict[str, Any] = {"raw": raw_stage, "detections": detections}
             for s in self._stages:
                 out[s.name] = self._stage_frames[s.name][-1] if self._stage_frames[s.name] else None
@@ -235,6 +253,23 @@ class VisionPipeline:
                 return ok
         return False
 
+    def update_tag_detector_config(self, config: Dict[str, Any]) -> bool:
+        """Update config of the tag detector (quad_decimate, nthreads). Returns True if updated."""
+        for stage in self._stages:
+            if stage.name == "detect" and hasattr(stage, "_tag_detector") and hasattr(stage._tag_detector, "set_config"):
+                ok = stage._tag_detector.set_config(config)
+                if ok:
+                    self.logger.info(f"[Pipeline] Live tag detector config applied: quad_decimate={config.get('quad_decimate')} nthreads={config.get('nthreads')}")
+                return ok
+        return False
+
+    def get_tag_detector_config(self) -> Optional[Dict[str, Any]]:
+        """Get current tag detector config (quad_decimate, nthreads)."""
+        for stage in self._stages:
+            if stage.name == "detect" and hasattr(stage, "_tag_detector") and hasattr(stage._tag_detector, "get_config"):
+                return stage._tag_detector.get_config()
+        return None
+
     def get_latest_frame(self, stage: str) -> Optional[StageFrame]:
         if stage == "raw":
             return self.raw_frames[-1] if self.raw_frames else None
@@ -248,11 +283,23 @@ class VisionPipeline:
         rate = 0.0
         if self.frames_processed > 0:
             rate = (self.frames_with_detections / self.frames_processed) * 100
+        fps = 0.0
+        if len(self._frame_times) >= 2:
+            span = self._frame_times[-1] - self._frame_times[0]
+            if span > 0:
+                fps = (len(self._frame_times) - 1) / span
         with self.detection_stats_lock:
             tag_stats = {
                 tid: {"count": s["count"], "detection_rate": (s["count"] / self.frames_processed * 100) if self.frames_processed else 0.0}
                 for tid, s in self.detection_stats.items()
             }
+        # Per-stage timings (rolling avg ms)
+        stage_timings_ms: Dict[str, float] = {}
+        for name, times in self._stage_timings_ms.items():
+            if times:
+                stage_timings_ms[name] = round(sum(times) / len(times), 1)
+        total_ms = sum(stage_timings_ms.values())
+
         return {
             "frames_processed": self.frames_processed,
             "detections_count": self.detections_count,
@@ -260,4 +307,7 @@ class VisionPipeline:
             "frames_with_detections": self.frames_with_detections,
             "detection_rate_percent": round(rate, 1),
             "tag_statistics": tag_stats,
+            "fps": round(fps, 1),
+            "stage_timings_ms": stage_timings_ms,
+            "stage_total_ms": round(total_ms, 1),
         }

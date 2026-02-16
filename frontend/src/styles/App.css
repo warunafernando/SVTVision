@@ -15,7 +15,7 @@
 .app-sidebar {
   display: flex;
   flex-direction: column;
-  width: 312px; /* 120% of 260px */
+  width: 343px; /* 10% wider than 312px */
   flex-shrink: 0;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border);
@@ -58,9 +58,11 @@
 }
 
 .app-main > * {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }

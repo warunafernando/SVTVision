@@ -6,6 +6,7 @@ v4l2-python3==0.3.5
 pyudev==0.24.1
 opencv-python-headless==4.8.1.78
 numpy==1.24.3
+psutil>=5.9.0
 apriltag==0.0.16
 # Testing (httpx < 0.28 for starlette TestClient compatibility)
 pytest>=7.0

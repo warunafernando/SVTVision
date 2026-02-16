@@ -13,6 +13,10 @@ class PreprocessAdapter(PreprocessPort):
     def __init__(self, logger: LoggingService):
         self.logger = logger
         self.config = {
+            # output_type:
+            # - "binary": thresholded output (legacy behavior)
+            # - "grayscale": blurred/normalized grayscale (recommended for AprilTag)
+            "output_type": "binary",
             "blur_kernel_size": 3,  # Reduced blur for sharper edges (better for AprilTag)
             "threshold_type": "adaptive",  # "adaptive" or "binary" (used when adaptive_thresholding not set)
             "adaptive_thresholding": False,  # Option: use adaptive threshold (default off = binary)
@@ -42,6 +46,12 @@ class PreprocessAdapter(PreprocessPort):
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             else:
                 gray = frame.copy()
+
+            # Optional: contrast normalization (min-max stretch)
+            if self.config.get("contrast_normalization", False):
+                gmin, gmax = int(gray.min()), int(gray.max())
+                if gmax > gmin:
+                    gray = np.clip((gray.astype(np.float32) - gmin) / (gmax - gmin) * 255, 0, 255).astype(np.uint8)
             
             # Apply Gaussian blur
             blur_size = self.config["blur_kernel_size"]
@@ -49,6 +59,10 @@ class PreprocessAdapter(PreprocessPort):
                 blurred = cv2.GaussianBlur(gray, (blur_size, blur_size), 0)
             else:
                 blurred = gray
+
+            # If grayscale output requested, stop here (recommended for AprilTag detector input).
+            if str(self.config.get("output_type", "binary")).lower() == "grayscale":
+                return blurred
             
             # Apply threshold (adaptive if option on, else binary)
             use_adaptive = self.config.get("adaptive_thresholding", self.config.get("threshold_type") == "adaptive")
@@ -94,6 +108,13 @@ class PreprocessAdapter(PreprocessPort):
         """Set preprocessing configuration."""
         try:
             # Validate and update config
+            if "output_type" in config:
+                v = str(config["output_type"]).lower()
+                if v in ("binary", "grayscale"):
+                    self.config["output_type"] = v
+                else:
+                    self.logger.warning(f"[Preprocess] Invalid output_type: {v} (binary|grayscale)")
+
             if "blur_kernel_size" in config:
                 blur_size = int(config["blur_kernel_size"])
                 if blur_size >= 0 and blur_size % 2 == 1:

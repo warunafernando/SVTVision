@@ -1,12 +1,19 @@
 {
   "use_case": "apriltag",
+  "detector_backend": "cuda",
   "contrast": 10,
   "brightness": 0,
-  "saturation": 10.0,
+  "saturation": 10,
   "white_balance_automatic": 1,
-  "gain": 168.0,
+  "gain": 168,
   "power_line_frequency": 0,
   "auto_exposure": 0,
+  "resolution": {
+    "format": "MJPG",
+    "width": 640,
+    "height": 480,
+    "fps": 50
+  },
   "preprocessing": {
     "blur_kernel_size": 5,
     "threshold_type": "adaptive",

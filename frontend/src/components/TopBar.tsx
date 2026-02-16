@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { SystemInfo, HealthStatus } from '../types';
+import { requestRestart } from '../utils/api';
 import '../styles/TopBar.css';
 
 interface TopBarProps {
@@ -7,6 +8,8 @@ interface TopBarProps {
 }
 
 const TopBar: React.FC<TopBarProps> = ({ systemInfo }) => {
+  const [restarting, setRestarting] = useState(false);
+
   const getStatusClass = (status: HealthStatus): string => {
     return `status-indicator status-${status.toLowerCase()}`;
   };
@@ -24,11 +27,31 @@ const TopBar: React.FC<TopBarProps> = ({ systemInfo }) => {
     }
   };
 
+  const handleRestart = async () => {
+    if (restarting) return;
+    setRestarting(true);
+    try {
+      await requestRestart();
+      setTimeout(() => window.location.reload(), 1500);
+    } catch {
+      window.location.reload();
+    }
+  };
+
   return (
     <div className="top-bar">
       <div className="top-bar-left">
         <span className="app-name">{systemInfo.appName}</span>
         <span className="build-id">build {systemInfo.buildId}</span>
+        <button
+          type="button"
+          className="top-bar-restart-button"
+          onClick={handleRestart}
+          disabled={restarting}
+          title="Restart backend and reload frontend"
+        >
+          {restarting ? 'Restarting…' : 'Restart'}
+        </button>
       </div>
       <div className="top-bar-right">
         <div className="health-indicator">

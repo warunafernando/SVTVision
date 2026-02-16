@@ -27,11 +27,13 @@ class ConfigService:
                 self.logger.error(f"[Config] Failed to load config: {e}")
                 self.config = {}
         else:
-            # Default config
+            # Default config (cameras not auto-started so server restart leaves them closed)
             self.config = {
                 "app_name": "SVTVision",
                 "build_id": "2024.01.20-dev",
-                "version": "0.1.0"
+                "version": "0.1.0",
+                "compact_ui": True,
+                "auto_start_cameras": False,
             }
             self._save_config()
     

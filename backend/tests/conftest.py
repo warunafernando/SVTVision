@@ -17,7 +17,11 @@ def app():
     config_dir = project_root / "config"
     frontend_dist = project_root / "frontend" / "dist"
     orchestrator = AppOrchestrator(config_dir, frontend_dist)
-    return orchestrator.start()
+    app = orchestrator.start()
+    try:
+        yield app
+    finally:
+        orchestrator.shutdown()
 
 
 @pytest.fixture

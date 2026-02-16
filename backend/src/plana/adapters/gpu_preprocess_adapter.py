@@ -45,6 +45,7 @@ class GpuPreprocessAdapter(PreprocessPort):
             self.logger.info("[Preprocess GPU] CuPy not available, using OpenCV CPU fallback")
         # Config keys match CPU preprocess (full parity); GPU path uses CuPy for all steps
         self.config = {
+            "output_type": "binary",  # "binary" or "grayscale"
             "blur_kernel_size": 3,
             "threshold_type": "adaptive",
             "adaptive_thresholding": False,
@@ -94,6 +95,9 @@ class GpuPreprocessAdapter(PreprocessPort):
             else:
                 blurred = gray
 
+            if str(self.config.get("output_type", "binary")).lower() == "grayscale":
+                return cp.asnumpy(blurred)
+
             # 3) Threshold
             if self.config["threshold_type"] == "adaptive":
                 block_size = max(3, self.config["adaptive_block_size"])
@@ -142,6 +146,9 @@ class GpuPreprocessAdapter(PreprocessPort):
             else:
                 blurred = gray
 
+            if str(self.config.get("output_type", "binary")).lower() == "grayscale":
+                return blurred
+
             use_adaptive = self.config.get("adaptive_thresholding", self.config.get("threshold_type") == "adaptive")
             if use_adaptive:
                 thresholded = cv2.adaptiveThreshold(
@@ -174,6 +181,10 @@ class GpuPreprocessAdapter(PreprocessPort):
 
     def set_config(self, config: Dict[str, Any]) -> bool:
         try:
+            if "output_type" in config:
+                v = str(config["output_type"]).lower()
+                if v in ("binary", "grayscale"):
+                    self.config["output_type"] = v
             if "blur_kernel_size" in config:
                 blur_size = int(config["blur_kernel_size"])
                 if blur_size >= 0 and blur_size % 2 == 1:

@@ -3,8 +3,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pathlib import Path
+import cv2
+import numpy as np
 from typing import Dict, Any
 from ..services.config_service import ConfigService
 from ..services.health_service import HealthService
@@ -114,8 +116,26 @@ class WebServerAdapter:
                 "appName": self.config_service.get("app_name", "SVTVision"),
                 "buildId": self.config_service.get("build_id", "2024.01.20-dev"),
                 "health": health.value,
-                "connection": "connected"
+                "connection": "connected",
+                "compactUi": self.config_service.get("compact_ui", True),
             }
+
+        @self.app.post("/api/system/restart")
+        async def post_system_restart() -> Dict[str, Any]:
+            """Restart backend server: respond then re-exec this process."""
+            import threading
+            import os
+            import sys
+            import time
+
+            def _restart_after():
+                time.sleep(1.0)
+                backend_dir = Path(__file__).resolve().parent.parent.parent.parent
+                os.chdir(backend_dir)
+                os.execv(sys.executable, [sys.executable, "main.py"])
+
+            threading.Thread(target=_restart_after, daemon=True).start()
+            return {"ok": True, "message": "Restarting server..."}
         
         @self.app.get("/api/debug/tree")
         async def get_debug_tree() -> Dict[str, Any]:
@@ -127,7 +147,92 @@ class WebServerAdapter:
             """Get top faults (non-OK nodes) from debug tree, ordered by severity."""
             faults = self.debug_tree_manager.get_top_faults(max_faults=max_faults)
             return {"faults": faults}
-        
+
+        # AprilTag pipeline API (start/stop, status, debug frame)
+        @self.app.get("/api/apriltag/status")
+        async def apriltag_status() -> Dict[str, Any]:
+            """AprilTag pipeline status: running, list of cameras with pipeline attached."""
+            return self.camera_service.get_apriltag_status()
+
+        @self.app.post("/api/apriltag/start")
+        async def apriltag_start() -> Dict[str, Any]:
+            """Start AprilTag pipeline. Ensures all cameras with use_case=apriltag in config are open, then attaches the pipeline."""
+            # Open any AprilTag cameras that are not yet open
+            camera_list = self.camera_discovery.get_camera_list()
+            opened = []
+            for cam in camera_list:
+                camera_id = cam.get("id")
+                if not camera_id:
+                    continue
+                config = self.camera_config_service.get_camera_config(camera_id) or {}
+                if config.get("use_case") != "apriltag":
+                    continue
+                if self.camera_service.is_camera_open(camera_id):
+                    continue
+                device_path = cam.get("device_path")
+                if not device_path:
+                    details = self.camera_discovery.get_camera_details(camera_id)
+                    device_path = details.get("device_path") if details else None
+                if not device_path:
+                    self.logger.warning(f"[AprilTag] Cannot open {camera_id}: no device_path")
+                    continue
+                try:
+                    success = self.camera_service.open_camera(camera_id, device_path, stream_only=False)
+                    if success:
+                        opened.append(camera_id)
+                        self.logger.info(f"[AprilTag] Opened camera {camera_id} for pipeline start")
+                except Exception as e:
+                    self.logger.error(f"[AprilTag] Failed to open {camera_id}: {e}")
+            result = self.camera_service.start_apriltag_pipeline()
+            if opened:
+                result["opened"] = opened
+            return result
+
+        @self.app.post("/api/apriltag/stop")
+        async def apriltag_stop() -> Dict[str, Any]:
+            """Stop AprilTag pipeline (detach from all apriltag cameras)."""
+            return self.camera_service.stop_apriltag_pipeline()
+
+        @self.app.get("/api/apriltag/settings")
+        async def apriltag_get_settings() -> Dict[str, Any]:
+            """Get AprilTag detector settings (quad_decimate, nthreads)."""
+            return self.camera_service.get_apriltag_settings()
+
+        @self.app.post("/api/apriltag/settings")
+        async def apriltag_apply_settings(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+            """Apply AprilTag detector settings (quad_decimate, nthreads). Takes effect immediately on running pipelines."""
+            return self.camera_service.apply_apriltag_settings(request)
+
+        @self.app.get("/api/apriltag/debug-frame")
+        async def apriltag_debug_frame(step: str = "detect_overlay") -> Response:
+            """Return composite (both cameras side-by-side) debug frame for pipeline step: raw, preprocess, detect_overlay."""
+            if step not in ("raw", "preprocess", "detect_overlay"):
+                raise HTTPException(status_code=400, detail="step must be raw, preprocess, or detect_overlay")
+            managers = self.camera_service.get_all_camera_managers()
+            apriltag_managers = [
+                (cid, m) for cid, m in managers.items()
+                if getattr(m, "use_case", None) == "apriltag" and m.vision_pipeline is not None and m.is_open()
+            ]
+            if len(apriltag_managers) < 2:
+                raise HTTPException(status_code=404, detail="Need two open AprilTag cameras with pipeline")
+            frames = []
+            for camera_id, manager in apriltag_managers[:2]:
+                if step == "raw":
+                    sf = manager.vision_pipeline.get_latest_frame("raw") if manager.vision_pipeline else None
+                else:
+                    sf = manager.vision_pipeline.get_latest_frame(step) if manager.vision_pipeline else None
+                if sf is None:
+                    raise HTTPException(status_code=404, detail=f"No frame for step={step} camera={camera_id}")
+                jpeg_bytes = sf.get_jpeg_bytes()
+                arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if img is None:
+                    raise HTTPException(status_code=500, detail="Failed to decode frame")
+                frames.append(img)
+            combined = np.hstack(frames)
+            _, jpeg = cv2.imencode(".jpg", combined)
+            return Response(content=jpeg.tobytes(), media_type="image/jpeg")
+
         @self.app.get("/api/selftest/run")
         async def run_selftest(test: str) -> Dict[str, Any]:
             """Run a self-test."""

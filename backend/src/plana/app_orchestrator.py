@@ -17,6 +17,7 @@ from .adapters.selftest_runner import SelfTestRunner
 from .services.camera_config_service import CameraConfigService
 import threading
 import time
+import sys
 
 
 class AppOrchestrator:
@@ -37,6 +38,10 @@ class AppOrchestrator:
             self.logger,
             self.camera_config_service
         )
+
+        # Shutdown coordination for background threads (hot-plug monitor).
+        self._shutdown_event = threading.Event()
+        self._hotplug_thread: threading.Thread | None = None
         
         # Initialize domain managers
         # Note: camera_discovery will be set after initialization due to circular dependency
@@ -117,13 +122,18 @@ class AppOrchestrator:
         # Auto-start cameras that have saved settings
         self._auto_start_cameras()
 
-        # Start hot-plug monitoring (after web server is initialized)
-        self._start_hotplug_monitoring()
+        # Start hot-plug monitoring (after web server is initialized).
+        # In unit tests (pytest), skip this background thread to avoid
+        # interpreter shutdown races / native teardown issues.
+        if "pytest" in sys.modules:
+            self.logger.info("[App] Hot-plug monitoring disabled under pytest")
+        else:
+            self._start_hotplug_monitoring()
     
     def _auto_start_cameras(self):
-        """Auto-start cameras that have saved resolution/FPS settings (unless disabled)."""
-        if not self.config_service.get("auto_start_cameras", True):
-            self.logger.info("[App] Auto-start cameras disabled (auto_start_cameras=false); vision pipeline not started")
+        """Auto-start cameras that have saved resolution/FPS settings (disabled by default so restart does not re-open)."""
+        if not self.config_service.get("auto_start_cameras", False):
+            self.logger.info("[App] Auto-start cameras disabled (auto_start_cameras=false); cameras stay closed after restart")
             return
         cameras = self.camera_discovery.get_camera_list()
         if not cameras:
@@ -179,14 +189,18 @@ class AppOrchestrator:
     def _start_hotplug_monitoring(self):
         """Start hot-plug monitoring thread (checks every 3 seconds)."""
         def monitor():
-            while True:
+            while not self._shutdown_event.is_set():
                 try:
-                    time.sleep(3)  # Check every 3 seconds
+                    # Check every 3 seconds (interruptible)
+                    self._shutdown_event.wait(timeout=3.0)
+                    if self._shutdown_event.is_set():
+                        break
                     self.camera_discovery.refresh()
                 except Exception as e:
                     self.logger.error(f"[App] Error in hot-plug monitoring: {e}")
         
         thread = threading.Thread(target=monitor, daemon=True)
+        self._hotplug_thread = thread
         thread.start()
         self.logger.info("[App] Hot-plug monitoring started (3 second interval)")
     
@@ -200,3 +214,32 @@ class AppOrchestrator:
     def shutdown(self):
         """Shutdown the application."""
         self.logger.info("[App] Shutting down SVTVision application...")
+        try:
+            # Stop background hot-plug monitoring (if running)
+            self._shutdown_event.set()
+            if self._hotplug_thread is not None:
+                self._hotplug_thread.join(timeout=2.0)
+        except Exception:
+            pass
+
+        # Stop any pipeline instances and camera threads.
+        try:
+            self.vision_pipeline_manager.stop_all()
+        except Exception:
+            pass
+
+        try:
+            for camera_id in list(self.camera_service.camera_managers.keys()):
+                try:
+                    self.camera_service.close_camera(camera_id)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Ensure threads are stopped even if managers list is empty but flags remain set.
+        try:
+            self.camera_service._stop_capture_thread()  # noqa: SLF001 (internal cleanup)
+            self.camera_service._stop_vision_pipeline_thread()  # noqa: SLF001 (internal cleanup)
+        except Exception:
+            pass

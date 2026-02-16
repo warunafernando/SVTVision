@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DebugTreeNode, HealthStatus } from '../types';
 import '../styles/DebugTree.css';
 
@@ -12,6 +12,17 @@ const DebugTree: React.FC<DebugTreeProps> = ({ nodes, onNodeClick, selectedNodeI
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(
     new Set(nodes.map(n => n.id))
   );
+
+  // When tree data loads, expand root so Host (CPU/GPU) and other top-level nodes are visible
+  useEffect(() => {
+    if (nodes.length > 0) {
+      setExpandedNodes((prev) => {
+        const next = new Set(prev);
+        nodes.forEach((n) => next.add(n.id));
+        return next;
+      });
+    }
+  }, [nodes]);
 
   const toggleExpand = (nodeId: string) => {
     const newExpanded = new Set(expandedNodes);
@@ -54,9 +65,7 @@ const DebugTree: React.FC<DebugTreeProps> = ({ nodes, onNodeClick, selectedNodeI
             <span
               className="expand-icon"
               onClick={(e) => {
-                e.stopPropagation();
-                toggleExpand(node.id);
-              }}
+                e.stopPropagation();b        
             >
               {isExpanded ? '▼' : '▶'}
             </span>
@@ -73,6 +82,15 @@ const DebugTree: React.FC<DebugTreeProps> = ({ nodes, onNodeClick, selectedNodeI
           <span className="node-reason">{node.reason}</span>
           
           <div className="node-metrics">
+            {node.metrics.cpu_percent !== undefined && node.metrics.cpu_percent !== null && (
+              <span className="metric">CPU {Number(node.metrics.cpu_percent).toFixed(1)}%</span>
+            )}
+            {node.metrics.gpu_percent !== undefined && node.metrics.gpu_percent !== null && (
+              <span className="metric">GPU {Number(node.metrics.gpu_percent)}%</span>
+            )}
+            {node.metrics.gpu_memory_used_mb !== undefined && node.metrics.gpu_memory_total_mb !== undefined && (
+              <span className="metric">{Number(node.metrics.gpu_memory_used_mb).toFixed(0)}/{Number(node.metrics.gpu_memory_total_mb).toFixed(0)} MB</span>
+            )}
             {node.metrics.fps !== undefined && (
               <span className="metric">{node.metrics.fps.toFixed(1)} fps</span>
             )}

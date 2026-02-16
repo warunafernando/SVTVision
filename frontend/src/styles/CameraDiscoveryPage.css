@@ -1,19 +1,65 @@
+/* Single scroll container: override app-main > * so only .camera-discovery-scroll scrolls */
 .camera-discovery-page {
-  padding: 24px;
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  overflow-y: auto;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden !important;
+}
+
+.camera-discovery-scroll-wrap {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+}
+
+.camera-discovery-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: scroll; /* always show scrollbar slot so wheel has a target */
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 24px;
+  overscroll-behavior-y: contain;
 }
 
 .discovery-header {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  padding: 24px 24px 16px;
 }
 
 .discovery-header h2 {
   font-size: 24px;
   color: var(--text-primary);
+}
+
+.discovery-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.discovery-scroll-arrows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.discovery-scroll-arrows .button-scroll {
+  padding: 6px 14px;
+  font-size: 14px;
+  line-height: 1.2;
+  min-width: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.discovery-scroll-arrows .button-scroll:hover {
+  background-color: var(--accent-hover);
 }
 
 .error-message {
@@ -39,21 +85,21 @@
 .camera-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .camera-card {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
 }
 
 .camera-header {
   display: flex;
   align-items: center;
-  padding: 16px;
-  gap: 12px;
+  padding: 10px 12px;
+  gap: 10px;
   transition: background-color 0.2s;
 }
 
@@ -75,23 +121,23 @@
 .camera-name {
   flex: 1;
   font-weight: 600;
-  font-size: 16px;
+  font-size: 14px;
   color: var(--text-primary);
 }
 
 .camera-id {
   font-family: monospace;
-  font-size: 13px;
+  font-size: 11px;
   color: var(--text-secondary);
   background-color: var(--bg-tertiary);
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
 }
 
 .camera-status {
-  padding: 4px 12px;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -106,13 +152,13 @@
 }
 
 .camera-details {
-  padding: 16px;
+  padding: 10px 12px;
   border-top: 1px solid var(--border);
   background-color: var(--bg-tertiary);
 }
 
 .details-section {
-  margin-bottom: 24px;
+  margin-bottom: 12px;
 }
 
 .details-section:last-child {
@@ -120,41 +166,41 @@
 }
 
 .details-section h3 {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 12px;
-  padding-bottom: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
   border-bottom: 1px solid var(--border);
 }
 
 .details-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
 }
 
 .details-grid div {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .usb-version-highlight {
   grid-column: 1 / -1;
-  padding: 8px;
+  padding: 4px 6px;
   background-color: var(--bg-secondary);
-  border-radius: 4px;
+  border-radius: 3px;
   border: 1px solid var(--border);
 }
 
 .usb-badge {
   display: inline-block;
-  padding: 4px 12px;
-  border-radius: 4px;
+  padding: 2px 8px;
+  border-radius: 3px;
   font-weight: 600;
-  font-size: 14px;
-  margin-left: 8px;
+  font-size: 12px;
+  margin-left: 6px;
 }
 
 .usb-badge.usb3 {
@@ -170,11 +216,12 @@
 .no-usb-info {
   color: var(--text-secondary);
   font-style: italic;
-  padding: 12px;
+  padding: 6px 0;
+  font-size: 12px;
 }
 
 .details-grid label {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -185,73 +232,73 @@
 .fps-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 6px;
+  margin-top: 4px;
 }
 
 .formats-list {
   font-family: monospace;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .resolution,
 .fps-range {
   background-color: var(--bg-secondary);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
   font-family: monospace;
 }
 
 .format-group {
-  margin-bottom: 16px;
-  padding: 12px;
+  margin-bottom: 8px;
+  padding: 6px 8px;
   background-color: var(--bg-secondary);
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 .format-group strong {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 12px;
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .resolution-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 4px;
 }
 
 .resolution-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
+  gap: 2px;
+  padding: 4px;
   background-color: var(--bg-tertiary);
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 .fps-info {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-secondary);
   font-style: italic;
 }
 
 .fps-ranges-table {
-  margin-top: 12px;
+  margin-top: 6px;
   overflow-x: auto;
 }
 
 .fps-ranges-table table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .fps-ranges-table th,
 .fps-ranges-table td {
-  padding: 6px 10px;
+  padding: 4px 8px;
   text-align: left;
   border-bottom: 1px solid var(--border);
 }
@@ -270,15 +317,15 @@
 .controls-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 8px;
+  margin-top: 4px;
+  font-size: 11px;
 }
 
 .controls-table th,
 .controls-table td {
-  padding: 8px 12px;
+  padding: 4px 8px;
   text-align: left;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
 }
 
 .controls-table th {
@@ -297,8 +344,8 @@
 }
 
 .details-actions {
-  margin-top: 24px;
-  padding-top: 16px;
+  margin-top: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--border);
 }
 
@@ -313,60 +360,60 @@
 }
 
 .button-small {
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 4px 8px;
+  font-size: 11px;
   margin-left: auto;
 }
 
 .camera-naming-form {
-  padding: 16px;
+  padding: 10px 12px;
   border-top: 1px solid var(--border);
   background-color: var(--bg-tertiary);
 }
 
 .camera-naming-form h4 {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .naming-controls {
   display: flex;
-  gap: 16px;
+  gap: 10px;
   align-items: flex-end;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .naming-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .naming-field label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-secondary);
 }
 
 .naming-field .select {
-  min-width: 150px;
+  min-width: 120px;
 }
 
 .naming-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .name-preview {
-  padding-top: 8px;
+  padding-top: 4px;
   border-top: 1px solid var(--border);
-  font-size: 13px;
+  font-size: 11px;
   color: var(--text-secondary);
 }
 
 .name-preview strong {
   color: var(--accent);
-  font-size: 14px;
+  font-size: 12px;
 }

@@ -12,6 +12,8 @@ from ..ports.stream_encoder_port import StreamEncoderPort
 from ..services.logging_service import LoggingService
 from .vision_pipeline import VisionPipeline
 
+APRILTAG_PIPELINE_LOG = "[AprilTag pipeline]"
+
 
 class CameraManager:
     """Manages camera lifecycle and frame capture."""
@@ -48,7 +50,10 @@ class CameraManager:
         self.frames_dropped = 0
         self.last_frame_time = 0.0
         self.metrics_lock = threading.Lock()
-        
+
+        # Streaming throttles (JPEG encoding is expensive and can cap pipeline FPS if done for every frame).
+        self._last_stream_encode_time = 0.0
+
         self.logger.info("[CameraManager] Initialized")
     
     def open(
@@ -163,7 +168,7 @@ class CameraManager:
             else:
                 fps = 0.0
             
-            return {
+            out: Dict[str, Any] = {
                 "frames_captured": self.frames_captured,
                 "frames_drops": self.frames_dropped,
                 "frames_dropped": self.frames_dropped,  # Both for compatibility
@@ -173,6 +178,7 @@ class CameraManager:
                 "device_path": self.device_path,
                 "settings": self.camera_port.get_actual_settings() if self.is_open() else {}
             }
+            return out
     
     def apply_settings(self, width: int, height: int, fps: float, format: str) -> bool:
         """Apply camera settings and verify.
@@ -286,6 +292,53 @@ class CameraManager:
         except queue.Empty:
             return None
     
+    def _run_pipeline_on_frame(self, raw_frame: np.ndarray) -> bool:
+        """Run vision pipeline on the given frame; update frame_queue and metrics. Returns True on success."""
+        if not self.vision_pipeline:
+            return False
+        try:
+            if self.use_case == "apriltag" and raw_frame.ndim == 3:
+                if raw_frame.shape[2] == 2:
+                    raw_frame = cv2.cvtColor(raw_frame, cv2.COLOR_YUV2GRAY_YUY2)
+                else:
+                    raw_frame = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
+            pipeline_result = self.vision_pipeline.process_frame(raw_frame)
+            stage_frame = pipeline_result.get("detect_overlay") or pipeline_result.get("raw")
+            if stage_frame:
+                # Streaming encode happens outside stage timings; keep it light to avoid FPS caps.
+                # AprilTag streams are fine at slightly lower quality; this frees CPU for higher FPS.
+                from ..adapters.gpu_frame_encoder import encode_frame_to_jpeg
+                now = time.time()
+                # Throttle AprilTag stream encoding to ~30 FPS to keep detection running at full rate.
+                if self.use_case == "apriltag":
+                    if now - self._last_stream_encode_time < (1.0 / 30.0):
+                        frame_jpeg = None
+                    else:
+                        self._last_stream_encode_time = now
+                        frame_jpeg = encode_frame_to_jpeg(stage_frame.frame, quality=60)
+                else:
+                    frame_jpeg = encode_frame_to_jpeg(stage_frame.frame, quality=85)
+                with self.frame_queue_lock:
+                    if frame_jpeg:
+                        was_full = len(self.frame_queue) >= self.frame_queue.maxlen
+                        old_frame_count = len(self.frame_queue)
+                        self.frame_queue.append(frame_jpeg)
+                        if was_full and len(self.frame_queue) == old_frame_count:
+                            with self.metrics_lock:
+                                self.frames_dropped += 1
+                with self.metrics_lock:
+                    self.frames_captured += 1
+                    self.last_frame_time = time.time()
+            detections = pipeline_result.get("detections", [])
+            if self.use_case == "apriltag" and detections:
+                self.logger.info(f"{APRILTAG_PIPELINE_LOG} Detected tags: {[d.tag_id for d in detections]}")
+            return True
+        except Exception as e:
+            self.logger.error(f"{APRILTAG_PIPELINE_LOG} Error processing vision pipeline: {e}")
+            with self.metrics_lock:
+                self.frames_dropped += 1
+            return False
+
     def process_vision_pipeline(self) -> bool:
         """Process one frame from camera queue through vision pipeline.
         Camera source pulls frame from this camera's queue (of 1); non-blocking get.
@@ -296,38 +349,11 @@ class CameraManager:
         raw_frame = self.get_raw_frame(timeout=0.0)
         if raw_frame is None:
             return False
-        
-        try:
-            # Convert raw frame to grayscale for AprilTag cameras
-            if len(raw_frame.shape) == 3:
-                raw_frame_gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY)
-                # Convert to 3-channel for consistency (BGR format but grayscale)
-                raw_frame_gray_bgr = cv2.cvtColor(raw_frame_gray, cv2.COLOR_GRAY2BGR)
-            else:
-                raw_frame_gray_bgr = raw_frame
-            
-            # Process frame through vision pipeline (pass grayscale version)
-            pipeline_result = self.vision_pipeline.process_frame(raw_frame_gray_bgr)
-            
-            # Store raw frame JPEG in processed frame queue
-            if pipeline_result.get("raw"):
-                raw_jpeg = pipeline_result["raw"].get_jpeg_bytes()
-                with self.frame_queue_lock:
-                    was_full = len(self.frame_queue) >= self.frame_queue.maxlen
-                    old_frame_count = len(self.frame_queue)
-                    self.frame_queue.append(raw_jpeg)
-                    
-                    if was_full and len(self.frame_queue) == old_frame_count:
-                        with self.metrics_lock:
-                            self.frames_dropped += 1
-            
-            return True
-        
-        except Exception as e:
-            self.logger.error(f"[CameraManager] Error processing vision pipeline: {e}")
-            with self.metrics_lock:
-                self.frames_dropped += 1
-            return False
+        if self.use_case == "apriltag":
+            self.logger.debug(f"{APRILTAG_PIPELINE_LOG} Step: get raw frame from queue")
+        if self.use_case == "apriltag":
+            self.logger.debug(f"{APRILTAG_PIPELINE_LOG} Step: run pipeline (preprocess → detect → overlay)")
+        return self._run_pipeline_on_frame(raw_frame)
     
     def _process_captured_frame(self, raw_frame: np.ndarray) -> bool:
         """Process a captured raw frame through pipeline and add to queue.

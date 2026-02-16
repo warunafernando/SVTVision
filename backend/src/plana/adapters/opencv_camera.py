@@ -29,7 +29,12 @@ class OpenCVCameraAdapter(CameraPort):
                 self.logger.error(f"[Camera] Invalid device path: {device_path}")
                 return False
             
-            self.cap = cv2.VideoCapture(device_index)
+             # Prefer V4L2 backend on Linux for lower overhead / better format control.
+            cap = cv2.VideoCapture(device_index, cv2.CAP_V4L2)
+            if not cap.isOpened():
+                cap.release()
+                cap = cv2.VideoCapture(device_index)
+            self.cap = cap
             if not self.cap.isOpened():
                 self.logger.error(
                     f"[Camera] Failed to open camera {device_path}. "
@@ -41,6 +46,12 @@ class OpenCVCameraAdapter(CameraPort):
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
             self.cap.set(cv2.CAP_PROP_FPS, fps)
+
+            # Reduce internal buffering/latency where supported.
+            try:
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
             
             # Set format. Phase 1: GREY = Y-only (grayscale) for apriltag use_case.
             if format == 'MJPG':
@@ -49,6 +60,14 @@ class OpenCVCameraAdapter(CameraPort):
                 self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'YUYV'))
             elif format == 'GREY':
                 self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'GREY'))
+
+            # For GREY/YUYV, try to disable OpenCV's RGB conversion so we can keep raw/mono frames.
+            # This can significantly reduce CPU overhead at high resolutions.
+            if format in ("GREY", "YUYV"):
+                try:
+                    self.cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)
+                except Exception:
+                    pass
             
             # Verify actual settings
             actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -130,6 +149,10 @@ class OpenCVCameraAdapter(CameraPort):
             ret, frame = self.cap.read()
             if not ret or frame is None:
                 return None
+            # Best-effort: if we opened in GREY and got a 3D array, squeeze to 2D when possible.
+            if self.format == "GREY" and getattr(frame, "ndim", 0) == 3:
+                if frame.shape[2] == 1:
+                    frame = frame[:, :, 0]
             return frame
             
         except Exception as e:

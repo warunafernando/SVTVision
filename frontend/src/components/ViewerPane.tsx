@@ -39,8 +39,6 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
 
   const stages: { key: Stage; label: string }[] = [
     { key: 'raw', label: 'Raw' },
-    { key: 'preprocess', label: 'Preprocess' },
-    { key: 'detect_overlay', label: 'Detect Overlay' },
   ];
 
   // WebSocket connection for video streaming
@@ -180,17 +178,19 @@ const ViewerPane: React.FC<ViewerPaneProps> = ({
         </div>
       </div>
 
-      <div className="viewer-tabs">
-        {stages.map(stage => (
-          <button
-            key={stage.key}
-            className={`viewer-tab ${selectedStage === stage.key ? 'active' : ''}`}
-            onClick={() => setSelectedStage(stage.key)}
-          >
-            {stage.label}
-          </button>
-        ))}
-      </div>
+      {stages.length > 1 && (
+        <div className="viewer-tabs">
+          {stages.map(stage => (
+            <button
+              key={stage.key}
+              className={`viewer-tab ${selectedStage === stage.key ? 'active' : ''}`}
+              onClick={() => setSelectedStage(stage.key)}
+            >
+              {stage.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="viewer-content">
         {/* Placeholder - ALWAYS render with content */}

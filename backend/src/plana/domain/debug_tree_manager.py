@@ -1,9 +1,76 @@
 """Debug tree manager for maintaining the debug tree state."""
 
+import subprocess
+import time
 from typing import List, Optional, Dict, Any
 from .debug_tree import DebugTreeNode, NodeStatus
 from ..services.health_service import HealthService
 from ..services.logging_service import LoggingService
+
+
+def _get_cpu_gpu_usage() -> Dict[str, Any]:
+    """Get CPU and GPU usage. Returns dict with cpu_percent, gpu_percent, gpu_memory_used_mb, gpu_memory_total_mb."""
+    out: Dict[str, Any] = {
+        "cpu_percent": None,
+        "gpu_percent": None,
+        "gpu_memory_used_mb": None,
+        "gpu_memory_total_mb": None,
+    }
+    # CPU: try psutil, else /proc/stat (Linux)
+    try:
+        import psutil
+        out["cpu_percent"] = round(psutil.cpu_percent(interval=None) or 0, 1)
+    except ImportError:
+        try:
+            with open("/proc/stat", "r") as f:
+                line = f.readline()
+            parts = line.split()
+            if parts[0] == "cpu" and len(parts) >= 5:
+                user, nice, system, idle = int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4])
+                total1 = user + nice + system + idle
+                time.sleep(0.05)
+                with open("/proc/stat", "r") as f:
+                    line2 = f.readline()
+                parts2 = line2.split()
+                if parts2[0] == "cpu" and len(parts2) >= 5:
+                    user2, nice2, system2, idle2 = int(parts2[1]), int(parts2[2]), int(parts2[3]), int(parts2[4])
+                    total2 = user2 + nice2 + system2 + idle2
+                    if total2 > total1:
+                        out["cpu_percent"] = round(100.0 * (1.0 - (idle2 - idle) / (total2 - total1)), 1)
+        except Exception:
+            pass
+    # GPU: try pynvml, else nvidia-smi
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        out["gpu_percent"] = util.gpu
+        out["gpu_memory_used_mb"] = round(mem.used / (1024 * 1024), 1)
+        out["gpu_memory_total_mb"] = round(mem.total / (1024 * 1024), 1)
+        pynvml.nvmlShutdown()
+    except Exception:
+        try:
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=utilization.gpu,memory.used,memory.total",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                parts = result.stdout.strip().split(",")
+                if len(parts) >= 3:
+                    out["gpu_percent"] = int(parts[0].strip().split()[0] or 0)
+                    out["gpu_memory_used_mb"] = float(parts[1].strip().split()[0] or 0)
+                    out["gpu_memory_total_mb"] = float(parts[2].strip().split()[0] or 0)
+        except Exception:
+            pass
+    return out
 
 
 class DebugTreeManager:
@@ -31,6 +98,18 @@ class DebugTreeManager:
             reason="All systems operational",
             metrics={"fps": 30.0, "latency": 16},
             children=[
+                DebugTreeNode(
+                    id="host",
+                    name="Host",
+                    status=NodeStatus.OK,
+                    reason="CPU/GPU",
+                    metrics={
+                        "cpu_percent": None,
+                        "gpu_percent": None,
+                        "gpu_memory_used_mb": None,
+                        "gpu_memory_total_mb": None,
+                    },
+                ),
                 DebugTreeNode(
                     id="camera_manager",
                     name="Camera Manager",
@@ -110,10 +189,24 @@ class DebugTreeManager:
     
     def get_tree(self) -> DebugTreeNode:
         """Get the current debug tree with updated camera status."""
+        # Update Host node with CPU/GPU usage
+        for child in self.root_node.children:
+            if child.id == "host":
+                usage = _get_cpu_gpu_usage()
+                child.metrics = {k: v for k, v in usage.items() if v is not None}
+                reason_parts = []
+                if usage.get("cpu_percent") is not None:
+                    reason_parts.append(f"CPU {usage['cpu_percent']}%")
+                if usage.get("gpu_percent") is not None:
+                    reason_parts.append(f"GPU {usage['gpu_percent']}%")
+                if reason_parts:
+                    child.reason = " | ".join(reason_parts)
+                break
+
         # Update camera capture node with real metrics
         camera_manager_node = None
         camera_capture_node = None
-        
+
         # Find camera_manager and camera_capture nodes
         for child in self.root_node.children:
             if child.id == "camera_manager":
@@ -138,7 +231,7 @@ class DebugTreeManager:
         if vision_pipeline_node:
             self._update_vision_pipeline_node(vision_pipeline_node)
         
-        # Update camera_capture node with real metrics if camera service available
+        # Update camera_capture node and Camera Manager node with real metrics if camera service available
         if camera_capture_node and self.camera_service:
             managers = self.camera_service.get_all_camera_managers()
             if managers:
@@ -160,16 +253,27 @@ class DebugTreeManager:
                             max_age = age
                         open_count += 1
                 
+                avg_fps = round(total_fps / open_count, 1) if open_count > 0 else 0.0
                 if open_count > 0:
                     camera_capture_node.status = NodeStatus.OK
                     camera_capture_node.reason = f"{open_count} camera(s) streaming"
                     camera_capture_node.metrics = {
-                        "fps": round(total_fps / open_count, 1),
+                        "fps": avg_fps,
                         "latency": 1,
                         "drops": total_drops,
                         "frames_captured": total_frames,  # Add total frames captured
                         "lastUpdateAge": int(max_age)  # Already in milliseconds, don't multiply
                     }
+                    # Camera Manager row: show same aggregate FPS as children
+                    if camera_manager_node:
+                        camera_manager_node.status = NodeStatus.OK
+                        camera_manager_node.reason = f"{open_count} camera(s) @ {avg_fps} fps"
+                        camera_manager_node.metrics = {
+                            "fps": avg_fps,
+                            "latency": 1,
+                            "drops": total_drops,
+                            "lastUpdateAge": int(max_age)
+                        }
                 else:
                     camera_capture_node.status = NodeStatus.WARN
                     camera_capture_node.reason = "No cameras open"
@@ -179,6 +283,10 @@ class DebugTreeManager:
                         "drops": 0,
                         "lastUpdateAge": 5000
                     }
+                    if camera_manager_node:
+                        camera_manager_node.status = NodeStatus.OK
+                        camera_manager_node.reason = "Running"
+                        camera_manager_node.metrics = {"fps": 0.0, "latency": 0, "drops": 0, "lastUpdateAge": 5000}
             else:
                 camera_capture_node.status = NodeStatus.WARN
                 camera_capture_node.reason = "No cameras open"
@@ -188,6 +296,10 @@ class DebugTreeManager:
                     "drops": 0,
                     "lastUpdateAge": 5000
                 }
+                if camera_manager_node:
+                    camera_manager_node.status = NodeStatus.OK
+                    camera_manager_node.reason = "Running"
+                    camera_manager_node.metrics = {"fps": 0.0, "latency": 0, "drops": 0, "lastUpdateAge": 5000}
         
         return self.root_node
     
@@ -205,6 +317,14 @@ class DebugTreeManager:
                     detected_cameras = camera_list.get("cameras", [])
             except Exception as e:
                 self.logger.warning(f"[DebugTree] Failed to get camera list for debug tree: {e}")
+        
+        # Update Camera Discovery node with actual count
+        for child in camera_manager_node.children:
+            if child.id == "camera_discovery":
+                n = len(detected_cameras)
+                child.reason = f"{n} camera{'s' if n != 1 else ''} found"
+                child.metrics = {"lastUpdateAge": 0}
+                break
         
         # Get camera managers for open cameras
         camera_managers = {}

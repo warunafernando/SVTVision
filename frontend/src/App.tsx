@@ -5,6 +5,7 @@ import DebugTree from './components/DebugTree';
 import ConsoleOutput from './components/ConsoleOutput';
 import CamerasPage from './pages/CamerasPage';
 import CameraDiscoveryPage from './pages/CameraDiscoveryPage';
+import AprilTagPage from './pages/AprilTagPage';
 import VisionPipelinePage from './pages/VisionPipelinePage';
 import SettingsPage from './pages/SettingsPage';
 import SelfTestPage from './pages/SelfTestPage';
@@ -78,6 +79,7 @@ const App: React.FC = () => {
               <Route path="/" element={<CamerasPage />} />
               <Route path="/cameras" element={<CamerasPage />} />
               <Route path="/discovery" element={<CameraDiscoveryPage />} />
+              <Route path="/apriltag" element={<AprilTagPage />} />
               <Route path="/vision-pipeline" element={<VisionPipelinePage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/selftest" element={<SelfTestPage />} />
@@ -96,6 +98,7 @@ const Navigation: React.FC = () => {
   const navItems = [
     { path: '/cameras', label: 'Cameras' },
     { path: '/discovery', label: 'Discovery' },
+    { path: '/apriltag', label: 'AprilTag' },
     { path: '/vision-pipeline', label: 'Vision Pipeline' },
     { path: '/settings', label: 'Settings' },
     { path: '/selftest', label: 'Self-Test' },

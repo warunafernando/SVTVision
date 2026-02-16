@@ -18,10 +18,10 @@ describe('Palette', () => {
     expect(screen.getByText('ImageFileSource')).toBeInTheDocument()
   })
 
-  it('renders preprocess_cpu and detect_apriltag_cpu stages', () => {
+  it('renders Preprocess (CPU) and AprilTag Detect (CPU) stages', () => {
     render(<Palette />)
-    expect(screen.getByText('preprocess_cpu')).toBeInTheDocument()
-    expect(screen.getByText('detect_apriltag_cpu')).toBeInTheDocument()
+    expect(screen.getByText('Preprocess (CPU)')).toBeInTheDocument()
+    expect(screen.getByText('AprilTag Detect (CPU)')).toBeInTheDocument()
   })
 
   it('renders StreamTap, SaveVideo, SaveImage, SVTVisionOutput sinks', () => {

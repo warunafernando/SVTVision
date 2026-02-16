@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { fetchCameras, fetchCameraDetails, fetchCameraCapabilities, fetchCameraControls, CameraDetails, CameraCapabilities, CameraControl } from '../utils/cameraApi';
 import { API_BASE } from '../utils/config';
 import { Camera } from '../types';
@@ -92,6 +92,31 @@ const CameraDiscoveryPage: React.FC = () => {
   const [editingCamera, setEditingCamera] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollAmount = 120;
+  const scrollUp = () => scrollRef.current?.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
+  const scrollDown = () => scrollRef.current?.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el || e.deltaY === 0) return;
+    el.scrollTop += e.deltaY;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return;
+      el.scrollTop += e.deltaY;
+      e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false, capture: true });
+    return () => el.removeEventListener('wheel', onWheel, { capture: true });
+  }, []);
 
   useEffect(() => {
     loadCameras();
@@ -239,11 +264,27 @@ const CameraDiscoveryPage: React.FC = () => {
     <div className="camera-discovery-page">
       <div className="discovery-header">
         <h2>Camera Discovery</h2>
-        <button className="button" onClick={loadCameras} disabled={loading}>
-          {loading ? 'Refreshing...' : 'Refresh'}
-        </button>
+        <div className="discovery-header-actions">
+          <div className="discovery-scroll-arrows" role="group" aria-label="Scroll page">
+            <button type="button" className="button button-scroll" onClick={scrollUp} title="Scroll up" aria-label="Scroll up">
+              ▲
+            </button>
+            <button type="button" className="button button-scroll" onClick={scrollDown} title="Scroll down" aria-label="Scroll down">
+              ▼
+            </button>
+          </div>
+          <button className="button" onClick={loadCameras} disabled={loading}>
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
+      <div className="camera-discovery-scroll-wrap">
+        <div
+          ref={scrollRef}
+          className="camera-discovery-scroll"
+          onWheel={handleWheel}
+        >
       {error && <div className="error-message">{error}</div>}
 
       {cameras.length === 0 ? (
@@ -470,6 +511,8 @@ const CameraDiscoveryPage: React.FC = () => {
           })}
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 };
