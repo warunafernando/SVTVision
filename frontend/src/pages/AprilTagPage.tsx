@@ -170,16 +170,6 @@ const AprilTagPage: React.FC = () => {
                   </span>
                 </>
               )}
-              {status.metrics.stage_timings_ms && (
-                <>
-                  <span>Stage timings (ms):</span>
-                  <span title="preprocess, detect, detect_overlay">
-                    {Object.entries(status.metrics.stage_timings_ms)
-                      .map(([k, v]) => `${k}: ${v}`)
-                      .join(' | ')}
-                  </span>
-                </>
-              )}
             </div>
             {status.target_fps != null && (status.metrics.fps ?? 0) < status.target_fps * 0.9 && (
               <p className="apriltag-fps-note">Pipeline FPS is below camera target; both cameras are now processed in parallel. Use GPU detection to get closer to {status.target_fps} FPS.</p>

@@ -17,6 +17,8 @@ export interface DebugTreeNode {
     gpu_memory_total_mb?: number | null;
     tags_detected?: number;
     frames_processed?: number;
+    ms?: number;
+    total_ms?: number;
   };
   children?: DebugTreeNode[];
   expanded?: boolean;

@@ -88,6 +88,18 @@ export const mockDebugTreeNodes: DebugTreeNode[] = [
         ],
       },
       {
+        id: 'stage_timings',
+        name: 'Stage timings',
+        status: 'OK',
+        reason: '4.2 ms total',
+        metrics: { total_ms: 4.2 },
+        children: [
+          { id: 'stage_timing_preprocess', name: 'preprocess', status: 'OK', reason: '1.2 ms', metrics: { ms: 1.2 } },
+          { id: 'stage_timing_detect', name: 'detect', status: 'OK', reason: '2.0 ms', metrics: { ms: 2.0 } },
+          { id: 'stage_timing_detect_overlay', name: 'detect_overlay', status: 'OK', reason: '1.0 ms', metrics: { ms: 1.0 } },
+        ],
+      },
+      {
         id: 'webserver',
         name: 'Web Server',
         status: 'OK',

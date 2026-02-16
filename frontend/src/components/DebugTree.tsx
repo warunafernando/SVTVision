@@ -13,12 +13,15 @@ const DebugTree: React.FC<DebugTreeProps> = ({ nodes, onNodeClick, selectedNodeI
     new Set(nodes.map(n => n.id))
   );
 
-  // When tree data loads, expand root so Host (CPU/GPU) and other top-level nodes are visible
+  // When tree data loads, expand root and top-level nodes so Host, Camera Manager, Vision Pipeline, Stage timings, Web Server are visible
   useEffect(() => {
     if (nodes.length > 0) {
       setExpandedNodes((prev) => {
         const next = new Set(prev);
-        nodes.forEach((n) => next.add(n.id));
+        nodes.forEach((n) => {
+          next.add(n.id);
+          (n.children || []).forEach((c) => next.add(c.id));
+        });
         return next;
       });
     }
@@ -53,6 +56,7 @@ const DebugTree: React.FC<DebugTreeProps> = ({ nodes, onNodeClick, selectedNodeI
     const hasChildren = node.children && node.children.length > 0;
     const isExpanded = expandedNodes.has(node.id);
     const isSelected = selectedNodeId === node.id;
+    const metrics = node.metrics || {};
 
     return (
       <div key={node.id} className="debug-tree-node">
@@ -65,7 +69,9 @@ const DebugTree: React.FC<DebugTreeProps> = ({ nodes, onNodeClick, selectedNodeI
             <span
               className="expand-icon"
               onClick={(e) => {
-                e.stopPropagation();b        
+                e.stopPropagation();
+                toggleExpand(node.id);
+              }}
             >
               {isExpanded ? '▼' : '▶'}
             </span>
@@ -82,32 +88,38 @@ const DebugTree: React.FC<DebugTreeProps> = ({ nodes, onNodeClick, selectedNodeI
           <span className="node-reason">{node.reason}</span>
           
           <div className="node-metrics">
-            {node.metrics.cpu_percent !== undefined && node.metrics.cpu_percent !== null && (
-              <span className="metric">CPU {Number(node.metrics.cpu_percent).toFixed(1)}%</span>
+            {metrics.cpu_percent !== undefined && metrics.cpu_percent !== null && (
+              <span className="metric">CPU {Number(metrics.cpu_percent).toFixed(1)}%</span>
             )}
-            {node.metrics.gpu_percent !== undefined && node.metrics.gpu_percent !== null && (
-              <span className="metric">GPU {Number(node.metrics.gpu_percent)}%</span>
+            {metrics.gpu_percent !== undefined && metrics.gpu_percent !== null && (
+              <span className="metric">GPU {Number(metrics.gpu_percent)}%</span>
             )}
-            {node.metrics.gpu_memory_used_mb !== undefined && node.metrics.gpu_memory_total_mb !== undefined && (
-              <span className="metric">{Number(node.metrics.gpu_memory_used_mb).toFixed(0)}/{Number(node.metrics.gpu_memory_total_mb).toFixed(0)} MB</span>
+            {metrics.gpu_memory_used_mb !== undefined && metrics.gpu_memory_total_mb !== undefined && (
+              <span className="metric">{Number(metrics.gpu_memory_used_mb).toFixed(0)}/{Number(metrics.gpu_memory_total_mb).toFixed(0)} MB</span>
             )}
-            {node.metrics.fps !== undefined && (
-              <span className="metric">{node.metrics.fps.toFixed(1)} fps</span>
+            {metrics.fps !== undefined && (
+              <span className="metric">{Number(metrics.fps).toFixed(1)} fps</span>
             )}
-            {node.metrics.latency !== undefined && (
-              <span className="metric">{node.metrics.latency.toFixed(0)}ms</span>
+            {metrics.latency !== undefined && (
+              <span className="metric">{Number(metrics.latency).toFixed(0)}ms</span>
             )}
-            {node.metrics.drops !== undefined && (
-              <span className="metric">{node.metrics.drops} drops</span>
+            {metrics.drops !== undefined && (
+              <span className="metric">{metrics.drops} drops</span>
             )}
-            {node.metrics.tags_detected !== undefined && (
-              <span className="metric">{node.metrics.tags_detected} tags</span>
+            {metrics.tags_detected !== undefined && (
+              <span className="metric">{metrics.tags_detected} tags</span>
             )}
-            {node.metrics.frames_processed !== undefined && (
-              <span className="metric">{node.metrics.frames_processed} frames</span>
+            {metrics.frames_processed !== undefined && (
+              <span className="metric">{metrics.frames_processed} frames</span>
             )}
-            {node.metrics.lastUpdateAge !== undefined && (
-              <span className="metric">{node.metrics.lastUpdateAge}ms ago</span>
+            {metrics.lastUpdateAge !== undefined && (
+              <span className="metric">{metrics.lastUpdateAge}ms ago</span>
+            )}
+            {metrics.ms !== undefined && (
+              <span className="metric">{Number(metrics.ms).toFixed(1)} ms</span>
+            )}
+            {metrics.total_ms !== undefined && (
+              <span className="metric">{Number(metrics.total_ms).toFixed(1)} ms total</span>
             )}
           </div>
         </div>

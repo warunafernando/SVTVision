@@ -178,6 +178,14 @@ class DebugTreeManager:
                     ]
                 ),
                 DebugTreeNode(
+                    id="stage_timings",
+                    name="Stage timings",
+                    status=NodeStatus.OK,
+                    reason="—",
+                    metrics={},
+                    children=[]
+                ),
+                DebugTreeNode(
                     id="webserver",
                     name="Web Server",
                     status=NodeStatus.OK,
@@ -230,6 +238,15 @@ class DebugTreeManager:
         
         if vision_pipeline_node:
             self._update_vision_pipeline_node(vision_pipeline_node)
+        
+        # Update stage timings node from pipeline metrics
+        stage_timings_node = None
+        for child in self.root_node.children:
+            if child.id == "stage_timings":
+                stage_timings_node = child
+                break
+        if stage_timings_node:
+            self._update_stage_timings_node(stage_timings_node)
         
         # Update camera_capture node and Camera Manager node with real metrics if camera service available
         if camera_capture_node and self.camera_service:
@@ -572,6 +589,40 @@ class DebugTreeManager:
                     }
                 )
                 vision_pipeline_node.children.append(pipeline_camera_node)
+    
+    def _update_stage_timings_node(self, stage_timings_node: DebugTreeNode) -> None:
+        """Update Stage timings node from first active pipeline's stage_timings_ms."""
+        if not self.camera_service:
+            stage_timings_node.reason = "No camera service"
+            stage_timings_node.children = []
+            return
+        managers = self.camera_service.get_all_camera_managers()
+        stage_timings_ms: Dict[str, float] = {}
+        for _camera_id, manager in managers.items():
+            if manager.is_open() and hasattr(manager, 'vision_pipeline') and manager.vision_pipeline:
+                metrics = manager.vision_pipeline.get_metrics()
+                stage_timings_ms = metrics.get("stage_timings_ms") or {}
+                break
+        if not stage_timings_ms:
+            stage_timings_node.status = NodeStatus.OK
+            stage_timings_node.reason = "No pipeline running"
+            stage_timings_node.metrics = {}
+            stage_timings_node.children = []
+            return
+        total_ms = sum(stage_timings_ms.values())
+        stage_timings_node.status = NodeStatus.OK
+        stage_timings_node.reason = f"{round(total_ms, 1)} ms total"
+        stage_timings_node.metrics = {"total_ms": round(total_ms, 1)}
+        stage_timings_node.children = [
+            DebugTreeNode(
+                id=f"stage_timing_{key}",
+                name=key,
+                status=NodeStatus.OK,
+                reason=f"{ms} ms",
+                metrics={"ms": ms}
+            )
+            for key, ms in sorted(stage_timings_ms.items())
+        ]
     
     def get_top_faults(self, max_faults: int = 5) -> List[Dict[str, Any]]:
         """Collect nodes with status != OK from the tree, ordered by severity (ERROR > STALE > WARN)."""
