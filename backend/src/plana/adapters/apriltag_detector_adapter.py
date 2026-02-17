@@ -12,7 +12,7 @@ from ..services.logging_service import LoggingService
 class AprilTagDetectorAdapter(TagDetectorPort):
     """Adapter for AprilTag detection using apriltag library."""
 
-    DEFAULT_QUAD_DECIMATE = 2.0  # 2.0 = 4x fewer pixels, ~2-4x faster
+    DEFAULT_QUAD_DECIMATE = 1.0  
     DEFAULT_NTHREADS = 4  # Use multiple CPU cores
 
     def __init__(self, logger: LoggingService, family: str = "tag36h11"):
